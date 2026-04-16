@@ -1,0 +1,5 @@
+# Archivo de ejemplo para variables de Terraform
+# Copiar a terraform.tfvars y ajustar valores según el ambiente
+
+environment = "dev"
+aws_region  = "us-east-1"

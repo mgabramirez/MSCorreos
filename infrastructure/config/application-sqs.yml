@@ -1,0 +1,79 @@
+# Configuración de SQS para MSCorreos
+# Este archivo debe ser incluido en src/main/resources/application.yml
+
+# Configuración común para todos los ambientes
+aws:
+  region: us-east-1
+  
+  sqs:
+    # Configuración de polling
+    max-number-of-messages: 10
+    wait-time-seconds: 20
+    visibility-timeout: 30
+    
+    # Configuración de reintentos
+    max-retries: 3
+    backoff:
+      initial-interval: 1000  # 1 segundo
+      multiplier: 2.0
+      max-interval: 4000      # 4 segundos
+      
+---
+# Ambiente de desarrollo
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+aws:
+  sqs:
+    queue:
+      standard:
+        name: mscorreos-standard-dev
+        url: ${STANDARD_QUEUE_URL:https://sqs.us-east-1.amazonaws.com/ACCOUNT_ID/mscorreos-standard-dev}
+      fifo:
+        name: mscorreos-alta-prioridad-dev.fifo
+        url: ${FIFO_QUEUE_URL:https://sqs.us-east-1.amazonaws.com/ACCOUNT_ID/mscorreos-alta-prioridad-dev.fifo}
+      dlq:
+        name: mscorreos-dlq-dev
+        url: ${DLQ_URL:https://sqs.us-east-1.amazonaws.com/ACCOUNT_ID/mscorreos-dlq-dev}
+
+---
+# Ambiente de testing
+spring:
+  config:
+    activate:
+      on-profile: test
+
+aws:
+  sqs:
+    queue:
+      standard:
+        name: mscorreos-standard-test
+        url: ${STANDARD_QUEUE_URL:https://sqs.us-east-1.amazonaws.com/ACCOUNT_ID/mscorreos-standard-test}
+      fifo:
+        name: mscorreos-alta-prioridad-test.fifo
+        url: ${FIFO_QUEUE_URL:https://sqs.us-east-1.amazonaws.com/ACCOUNT_ID/mscorreos-alta-prioridad-test.fifo}
+      dlq:
+        name: mscorreos-dlq-test
+        url: ${DLQ_URL:https://sqs.us-east-1.amazonaws.com/ACCOUNT_ID/mscorreos-dlq-test}
+
+---
+# Ambiente de producción
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+aws:
+  sqs:
+    queue:
+      standard:
+        name: mscorreos-standard-prod
+        url: ${STANDARD_QUEUE_URL:https://sqs.us-east-1.amazonaws.com/ACCOUNT_ID/mscorreos-standard-prod}
+      fifo:
+        name: mscorreos-alta-prioridad-prod.fifo
+        url: ${FIFO_QUEUE_URL:https://sqs.us-east-1.amazonaws.com/ACCOUNT_ID/mscorreos-alta-prioridad-prod.fifo}
+      dlq:
+        name: mscorreos-dlq-prod
+        url: ${DLQ_URL:https://sqs.us-east-1.amazonaws.com/ACCOUNT_ID/mscorreos-dlq-prod}

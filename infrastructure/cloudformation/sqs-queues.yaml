@@ -1,0 +1,219 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Configuración de colas SQS para MSCorreos - Sistema de Notificaciones por Email'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    Description: 'Ambiente de despliegue'
+
+Resources:
+  # Dead Letter Queue (DLQ) - Cola para mensajes fallidos
+  MSCorreosDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'mscorreos-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 días (máximo permitido)
+      VisibilityTimeout: 30
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: DeadLetterQueue
+
+  # Cola Standard para prioridad MEDIA/BAJA
+  MSCorreosStandardQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'mscorreos-standard-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 días (Requirement 6.7)
+      VisibilityTimeout: 30  # 30 segundos (Requirement 2.5)
+      ReceiveMessageWaitTimeSeconds: 20  # Long polling de 20 segundos
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt MSCorreosDeadLetterQueue.Arn
+        maxReceiveCount: 3  # 3 reintentos antes de mover a DLQ (Requirement 2.4, 6.2)
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Priority
+          Value: MEDIA-BAJA
+        - Key: QueueType
+          Value: Standard
+
+  # Cola FIFO para prioridad ALTA
+  MSCorreosFifoQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'mscorreos-alta-prioridad-${Environment}.fifo'
+      FifoQueue: true
+      ContentBasedDeduplication: true  # Deduplicación automática basada en contenido
+      MessageRetentionPeriod: 1209600  # 14 días (Requirement 6.7)
+      VisibilityTimeout: 30  # 30 segundos (Requirement 2.5)
+      ReceiveMessageWaitTimeSeconds: 20  # Long polling de 20 segundos
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt MSCorreosDeadLetterQueue.Arn
+        maxReceiveCount: 3  # 3 reintentos antes de mover a DLQ (Requirement 2.4, 6.2)
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Priority
+          Value: ALTA
+        - Key: QueueType
+          Value: FIFO
+
+  # Política de acceso para la cola Standard
+  MSCorreosStandardQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref MSCorreosStandardQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - ec2.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+            Resource: !GetAtt MSCorreosStandardQueue.Arn
+
+  # Política de acceso para la cola FIFO
+  MSCorreosFifoQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref MSCorreosFifoQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - ec2.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+            Resource: !GetAtt MSCorreosFifoQueue.Arn
+
+  # Política de acceso para la DLQ
+  MSCorreosDLQPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref MSCorreosDeadLetterQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - sqs.amazonaws.com
+            Action:
+              - sqs:SendMessage
+            Resource: !GetAtt MSCorreosDeadLetterQueue.Arn
+
+  # Alarma CloudWatch para DLQ
+  DLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-dlq-messages-${Environment}'
+      AlarmDescription: 'Alarma cuando la DLQ contiene más de 10 mensajes'
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Average
+      Period: 300  # 5 minutos
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt MSCorreosDeadLetterQueue.QueueName
+      TreatMissingData: notBreaching
+
+  # Alarma CloudWatch para cola Standard
+  StandardQueueDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-standard-queue-depth-${Environment}'
+      AlarmDescription: 'Alarma cuando la cola Standard tiene más de 1000 mensajes'
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Average
+      Period: 300  # 5 minutos
+      EvaluationPeriods: 2
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt MSCorreosStandardQueue.QueueName
+      TreatMissingData: notBreaching
+
+  # Alarma CloudWatch para cola FIFO
+  FifoQueueDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-fifo-queue-depth-${Environment}'
+      AlarmDescription: 'Alarma cuando la cola FIFO tiene más de 500 mensajes'
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Average
+      Period: 300  # 5 minutos
+      EvaluationPeriods: 2
+      Threshold: 500
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt MSCorreosFifoQueue.QueueName
+      TreatMissingData: notBreaching
+
+Outputs:
+  StandardQueueURL:
+    Description: 'URL de la cola SQS Standard para prioridad MEDIA/BAJA'
+    Value: !Ref MSCorreosStandardQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-StandardQueueURL'
+
+  StandardQueueARN:
+    Description: 'ARN de la cola SQS Standard'
+    Value: !GetAtt MSCorreosStandardQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-StandardQueueARN'
+
+  FifoQueueURL:
+    Description: 'URL de la cola SQS FIFO para prioridad ALTA'
+    Value: !Ref MSCorreosFifoQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-FifoQueueURL'
+
+  FifoQueueARN:
+    Description: 'ARN de la cola SQS FIFO'
+    Value: !GetAtt MSCorreosFifoQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-FifoQueueARN'
+
+  DeadLetterQueueURL:
+    Description: 'URL de la Dead Letter Queue'
+    Value: !Ref MSCorreosDeadLetterQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-DeadLetterQueueURL'
+
+  DeadLetterQueueARN:
+    Description: 'ARN de la Dead Letter Queue'
+    Value: !GetAtt MSCorreosDeadLetterQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DeadLetterQueueARN'
