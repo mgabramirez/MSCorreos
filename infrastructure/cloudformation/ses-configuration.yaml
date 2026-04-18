@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Configuración de Amazon SES para MSCorreos - Sistema de Notificaciones por Email'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    Description: 'Ambiente de despliegue'
+  
+  SNSTopicArn:
+    Type: String
+    Description: 'ARN del topic SNS para eventos de tracking (debe existir previamente)'
+  
+  VerifiedDomain:
+    Type: String
+    Default: 'documentos-electronicos.info'
+    Description: 'Dominio verificado para envío de correos'
+  
+  FromEmail:
+    Type: String
+    Default: 'notificaciones@documentos-electronicos.info'
+    Description: 'Email remitente por defecto'
+
+Resources:
+  # Configuration Set para tracking de eventos
+  MSCorreosConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Sub 'mscorreos-tracking-${Environment}'
+      SendingOptions:
+        SendingEnabled: true
+      ReputationOptions:
+        ReputationMetricsEnabled: true
+      SuppressionOptions:
+        SuppressedReasons:
+          - BOUNCE
+          - COMPLAINT
+
+  # Event Destination hacia SNS para tracking
+  MSCorreosEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref MSCorreosConfigurationSet
+      EventDestination:
+        Name: !Sub 'sns-tracking-destination-${Environment}'
+        Enabled: true
+        MatchingEventTypes:
+          - send
+          - delivery
+          - open
+          - bounce
+          - complaint
+          - reject
+          - renderingFailure
+        SnsDestination:
+          TopicArn: !Ref SNSTopicArn
+
+  # Alarma CloudWatch para tasa de bounce alta
+  HighBounceRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-ses-high-bounce-rate-${Environment}'
+      AlarmDescription: 'Alarma cuando la tasa de bounce supera el 5%'
+      MetricName: Reputation.BounceRate
+      Namespace: AWS/SES
+      Statistic: Average
+      Period: 3600  # 1 hora
+      EvaluationPeriods: 1
+      Threshold: 0.05  # 5%
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ConfigurationSet
+          Value: !Ref MSCorreosConfigurationSet
+      TreatMissingData: notBreaching
+
+  # Alarma CloudWatch para tasa de complaint alta
+  HighComplaintRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-ses-high-complaint-rate-${Environment}'
+      AlarmDescription: 'Alarma cuando la tasa de complaint supera el 0.1%'
+      MetricName: Reputation.ComplaintRate
+      Namespace: AWS/SES
+      Statistic: Average
+      Period: 3600  # 1 hora
+      EvaluationPeriods: 1
+      Threshold: 0.001  # 0.1%
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ConfigurationSet
+          Value: !Ref MSCorreosConfigurationSet
+      TreatMissingData: notBreaching
+
+  # Alarma CloudWatch para envíos rechazados
+  HighRejectRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-ses-high-reject-rate-${Environment}'
+      AlarmDescription: 'Alarma cuando hay más de 10 rechazos en 5 minutos'
+      MetricName: Reject
+      Namespace: AWS/SES
+      Statistic: Sum
+      Period: 300  # 5 minutos
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ConfigurationSet
+          Value: !Ref MSCorreosConfigurationSet
+      TreatMissingData: notBreaching
+
+Outputs:
+  ConfigurationSetName:
+    Description: 'Nombre del Configuration Set de SES'
+    Value: !Ref MSCorreosConfigurationSet
+    Export:
+      Name: !Sub '${AWS::StackName}-ConfigurationSetName'
+
+  ConfigurationSetArn:
+    Description: 'ARN del Configuration Set de SES'
+    Value: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${MSCorreosConfigurationSet}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ConfigurationSetArn'
+
+  EventDestinationName:
+    Description: 'Nombre del Event Destination'
+    Value: !Sub 'sns-tracking-destination-${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-EventDestinationName'
+
+  VerifiedDomainOutput:
+    Description: 'Dominio configurado para verificación'
+    Value: !Ref VerifiedDomain
+    Export:
+      Name: !Sub '${AWS::StackName}-VerifiedDomain'
+
+  FromEmailOutput:
+    Description: 'Email remitente configurado'
+    Value: !Ref FromEmail
+    Export:
+      Name: !Sub '${AWS::StackName}-FromEmail'

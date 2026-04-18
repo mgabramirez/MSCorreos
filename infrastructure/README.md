@@ -7,16 +7,25 @@ Este directorio contiene la configuración de infraestructura como código (IaC)
 ```
 infrastructure/
 ├── cloudformation/
-│   └── sqs-queues.yaml          # Definición de colas SQS
+│   ├── sqs-queues.yaml          # Definición de colas SQS
+│   ├── sns-topic.yaml           # Topic SNS para tracking de SES
+│   └── ses-configuration.yaml   # Configuration Set de SES
 ├── scripts/
-│   ├── deploy-sqs.sh            # Script de despliegue
-│   └── delete-sqs.sh            # Script de eliminación
+│   ├── deploy-sqs.sh            # Script de despliegue SQS
+│   ├── delete-sqs.sh            # Script de eliminación SQS
+│   ├── deploy-ses.sh            # Script de despliegue SES
+│   └── delete-ses.sh            # Script de eliminación SES
+├── DEPLOYMENT_GUIDE.md          # Guía de despliegue SQS
+├── SES_CONFIGURATION_GUIDE.md   # Guía completa de configuración SES
+├── SES_QUICK_REFERENCE.md       # Referencia rápida SES
+├── TASK_2.1_SUMMARY.md          # Resumen Task 2.1 (SQS)
+├── TASK_2.2_SUMMARY.md          # Resumen Task 2.2 (SES)
 └── README.md                     # Este archivo
 ```
 
 ## Componentes de Infraestructura
 
-### Colas SQS
+### Colas SQS (Task 2.1)
 
 El sistema utiliza tres colas SQS:
 
@@ -43,11 +52,37 @@ El sistema utiliza tres colas SQS:
    - Message Retention: 14 días
    - Alarma CloudWatch cuando contiene más de 10 mensajes
 
-### Alarmas CloudWatch
+### Alarmas CloudWatch (SQS)
 
 - **DLQ Alarm**: Se activa cuando la DLQ tiene más de 10 mensajes
 - **Standard Queue Depth**: Se activa cuando la cola Standard tiene más de 1000 mensajes
 - **FIFO Queue Depth**: Se activa cuando la cola FIFO tiene más de 500 mensajes
+
+### Amazon SES (Task 2.2)
+
+El sistema utiliza Amazon SES para envío de correos con tracking completo:
+
+1. **Configuration Set** (`mscorreos-tracking-{env}`)
+   - Tracking de eventos habilitado
+   - Métricas de reputación habilitadas
+   - Supresión automática de bounces y complaints
+   - Event Destination configurado hacia SNS
+
+2. **SNS Topic** (`mscorreos-tracking-events-{env}`)
+   - Recibe eventos de SES (send, delivery, open, bounce, complaint, reject, renderingFailure)
+   - Política de acceso para SES
+   - Suscripción HTTPS al endpoint de MSCorreos
+
+3. **Identidades Verificadas**
+   - Dominio: `documentos-electronicos.info`
+   - Email: `notificaciones@documentos-electronicos.info`
+
+### Alarmas CloudWatch (SES)
+
+- **High Bounce Rate**: Se activa cuando bounce rate > 5%
+- **High Complaint Rate**: Se activa cuando complaint rate > 0.1%
+- **High Reject Rate**: Se activa cuando hay > 10 rechazos en 5 minutos
+- **Failed SNS Notifications**: Se activa cuando SNS no puede entregar > 5 mensajes
 
 ## Requisitos Previos
 
@@ -68,7 +103,21 @@ El sistema utiliza tres colas SQS:
 
 ## Despliegue
 
-### Desplegar Colas SQS
+### Desplegar Infraestructura Completa
+
+Para desplegar toda la infraestructura (SQS + SES):
+
+```bash
+cd infrastructure/scripts
+
+# 1. Desplegar colas SQS
+./deploy-sqs.sh dev
+
+# 2. Desplegar SES (requiere endpoint de MSCorreos)
+./deploy-ses.sh dev https://mscorreos-dev.acosux.com/sns/notifications
+```
+
+### Desplegar Solo Colas SQS
 
 ```bash
 cd infrastructure/scripts
@@ -114,6 +163,40 @@ chmod +x delete-sqs.sh
 ```
 
 **⚠️ ADVERTENCIA**: Esta operación eliminará todas las colas y los mensajes que contengan.
+
+### Desplegar Amazon SES
+
+```bash
+cd infrastructure/scripts
+chmod +x deploy-ses.sh
+./deploy-ses.sh [dev|test|prod] [mscorreos-endpoint-url]
+```
+
+Ejemplo para ambiente de desarrollo:
+```bash
+./deploy-ses.sh dev https://mscorreos-dev.acosux.com/sns/notifications
+```
+
+El script:
+1. Despliega SNS Topic para tracking de eventos
+2. Despliega SES Configuration Set con Event Destination
+3. Inicia verificación de dominio e email
+4. Verifica límites de envío actuales
+5. Muestra instrucciones para próximos pasos
+
+**Documentación detallada**: Ver [SES_CONFIGURATION_GUIDE.md](./SES_CONFIGURATION_GUIDE.md)
+
+**Referencia rápida**: Ver [SES_QUICK_REFERENCE.md](./SES_QUICK_REFERENCE.md)
+
+### Eliminar Amazon SES
+
+```bash
+cd infrastructure/scripts
+chmod +x delete-ses.sh
+./delete-ses.sh [dev|test|prod]
+```
+
+**⚠️ ADVERTENCIA**: Esta operación eliminará la configuración de SES pero NO las identidades verificadas.
 
 ## Configuración de la Aplicación
 
@@ -244,9 +327,17 @@ Los costos de SQS son muy bajos:
 
 ## Referencias
 
+- [Guía de Despliegue SQS](./DEPLOYMENT_GUIDE.md)
+- [Guía de Configuración SES](./SES_CONFIGURATION_GUIDE.md)
+- [Referencia Rápida SES](./SES_QUICK_REFERENCE.md)
+- [Resumen Task 2.1 (SQS)](./TASK_2.1_SUMMARY.md)
+- [Resumen Task 2.2 (SES)](./TASK_2.2_SUMMARY.md)
 - [AWS SQS Documentation](https://docs.aws.amazon.com/sqs/)
+- [AWS SES Documentation](https://docs.aws.amazon.com/ses/)
+- [AWS SNS Documentation](https://docs.aws.amazon.com/sns/)
 - [AWS CloudFormation SQS Reference](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html)
 - [SQS Best Practices](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-best-practices.html)
+- [SES Best Practices](https://docs.aws.amazon.com/ses/latest/dg/best-practices.html)
 
 ## Soporte
 

@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Topic SNS para eventos de tracking de SES - MSCorreos'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    Description: 'Ambiente de despliegue'
+  
+  MSCorreosEndpoint:
+    Type: String
+    Description: 'URL del endpoint HTTPS de MSCorreos para recibir notificaciones SNS (ej: https://mscorreos.acosux.com/sns/notifications)'
+
+Resources:
+  # Topic SNS para eventos de tracking de SES
+  MSCorreosTrackingTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'mscorreos-tracking-events-${Environment}'
+      DisplayName: !Sub 'MSCorreos SES Tracking Events (${Environment})'
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: SESTracking
+
+  # Política de acceso para que SES pueda publicar en el topic
+  MSCorreosTrackingTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref MSCorreosTrackingTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSESToPublish
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action:
+              - SNS:Publish
+            Resource: !Ref MSCorreosTrackingTopic
+            Condition:
+              StringEquals:
+                AWS:SourceAccount: !Ref AWS::AccountId
+
+  # Suscripción HTTPS al endpoint de MSCorreos
+  # NOTA: Esta suscripción requiere confirmación manual desde el endpoint
+  MSCorreosHTTPSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: https
+      TopicArn: !Ref MSCorreosTrackingTopic
+      Endpoint: !Ref MSCorreosEndpoint
+      # La suscripción quedará en estado "PendingConfirmation" hasta que el endpoint
+      # confirme mediante el SubscribeURL que SNS enviará en el primer mensaje
+
+  # Alarma para mensajes no entregados
+  FailedNotificationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-sns-failed-notifications-${Environment}'
+      AlarmDescription: 'Alarma cuando SNS no puede entregar mensajes al endpoint'
+      MetricName: NumberOfNotificationsFailed
+      Namespace: AWS/SNS
+      Statistic: Sum
+      Period: 300  # 5 minutos
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: TopicName
+          Value: !GetAtt MSCorreosTrackingTopic.TopicName
+      TreatMissingData: notBreaching
+
+Outputs:
+  TopicArn:
+    Description: 'ARN del topic SNS para tracking de eventos SES'
+    Value: !Ref MSCorreosTrackingTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-TopicArn'
+
+  TopicName:
+    Description: 'Nombre del topic SNS'
+    Value: !GetAtt MSCorreosTrackingTopic.TopicName
+    Export:
+      Name: !Sub '${AWS::StackName}-TopicName'
+
+  SubscriptionArn:
+    Description: 'ARN de la suscripción HTTPS (PendingConfirmation hasta que se confirme)'
+    Value: !Ref MSCorreosHTTPSSubscription
+    Export:
+      Name: !Sub '${AWS::StackName}-SubscriptionArn'
+
+  SubscriptionStatus:
+    Description: 'Estado de la suscripción'
+    Value: 'PendingConfirmation - Debe confirmarse desde el endpoint MSCorreos'
