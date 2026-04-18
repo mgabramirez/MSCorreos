@@ -67,14 +67,10 @@ public class CorreosNotificaciones implements Serializable {
     @Column(name = "n_empresa")
     private String nEmpresa;
     
-    @Basic(optional = false)
-    @NotNull
     @Size(min = 1, max = 2147483647)
     @Column(name = "n_ruc")
     private String nRuc;
     
-    @Basic(optional = false)
-    @NotNull
     @Size(min = 1, max = 2147483647)
     @Column(name = "n_clave")
     private String nClave;

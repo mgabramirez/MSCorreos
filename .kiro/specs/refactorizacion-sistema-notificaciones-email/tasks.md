@@ -25,7 +25,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
   - _Requirements: 5.1, 5.2_
 
 - [ ] 3. Implementar capa de dominio (Domain Layer)
-  - [ ] 3.1 Crear entidades JPA
+  - [x] 3.1 Crear entidades JPA
     - Implementar CorreosNotificaciones con anotaciones JPA
     - Implementar ListaNegra con método incrementarSoftBounce() y debeSerBloqueado()
     - Implementar ListaNegraHistorial
