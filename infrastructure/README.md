@@ -9,22 +9,34 @@ infrastructure/
 ├── cloudformation/
 │   ├── sqs-queues.yaml          # Definición de colas SQS
 │   ├── sns-topic.yaml           # Topic SNS para tracking de SES
-│   └── ses-configuration.yaml   # Configuration Set de SES
+│   ├── ses-configuration.yaml   # Configuration Set de SES
+│   └── s3-bucket.yaml           # Bucket S3 para adjuntos
+├── config/
+│   ├── iam-policy-mscorreos-s3.json    # Política IAM para MSCorreos (S3)
+│   └── iam-policy-shrimpsoft-s3.json   # Política IAM para ShrimpSoftServer (S3)
 ├── scripts/
 │   ├── deploy-sqs.sh            # Script de despliegue SQS
 │   ├── delete-sqs.sh            # Script de eliminación SQS
 │   ├── deploy-sns.sh            # Script de despliegue SNS
 │   ├── delete-sns.sh            # Script de eliminación SNS
 │   ├── deploy-ses.sh            # Script de despliegue SES
-│   └── delete-ses.sh            # Script de eliminación SES
+│   ├── delete-ses.sh            # Script de eliminación SES
+│   ├── deploy-s3.sh             # Script de despliegue S3
+│   └── delete-s3.sh             # Script de eliminación S3
+├── terraform/
+│   ├── main.tf                  # Configuración principal Terraform
+│   └── s3.tf                    # Configuración S3 Terraform
 ├── DEPLOYMENT_GUIDE.md          # Guía de despliegue SQS
 ├── SNS_CONFIGURATION_GUIDE.md   # Guía completa de configuración SNS
 ├── SNS_QUICK_REFERENCE.md       # Referencia rápida SNS
 ├── SES_CONFIGURATION_GUIDE.md   # Guía completa de configuración SES
 ├── SES_QUICK_REFERENCE.md       # Referencia rápida SES
+├── S3_CONFIGURATION_GUIDE.md    # Guía completa de configuración S3
+├── S3_QUICK_REFERENCE.md        # Referencia rápida S3
 ├── TASK_2.1_SUMMARY.md          # Resumen Task 2.1 (SQS)
 ├── TASK_2.2_SUMMARY.md          # Resumen Task 2.2 (SES)
 ├── TASK_2.3_SUMMARY.md          # Resumen Task 2.3 (SNS)
+├── TASK_2.4_SUMMARY.md          # Resumen Task 2.4 (S3)
 └── README.md                     # Este archivo
 ```
 
@@ -97,6 +109,26 @@ El sistema utiliza Amazon SES para envío de correos con tracking completo:
 - **High Complaint Rate**: Se activa cuando complaint rate > 0.1%
 - **High Reject Rate**: Se activa cuando hay > 10 rechazos en 5 minutos
 
+### Amazon S3 (Task 2.4)
+
+El sistema utiliza Amazon S3 para almacenar temporalmente adjuntos de correos:
+
+1. **Bucket S3** (`mscorreos-adjuntos-{env}`)
+   - Almacenamiento temporal de adjuntos
+   - Versionamiento habilitado
+   - Cifrado AES-256 en reposo
+   - Política de ciclo de vida: elimina archivos después de 7 días
+   - Acceso público completamente bloqueado
+
+2. **Políticas de Acceso**
+   - MSCorreos (Consumidor): GetObject, DeleteObject, ListBucket
+   - ShrimpSoftServer (Productor): PutObject, PutObjectAcl, ListBucket
+
+### Alarmas CloudWatch (S3)
+
+- **Bucket Size Alarm**: Se activa cuando el bucket supera 10 GB
+- **Object Count Alarm**: Se activa cuando el bucket tiene más de 10,000 objetos
+
 ## Requisitos Previos
 
 1. **AWS CLI** instalado y configurado
@@ -118,7 +150,7 @@ El sistema utiliza Amazon SES para envío de correos con tracking completo:
 
 ### Desplegar Infraestructura Completa
 
-Para desplegar toda la infraestructura (SQS + SNS + SES):
+Para desplegar toda la infraestructura (SQS + SNS + SES + S3):
 
 ```bash
 cd infrastructure/scripts
@@ -131,6 +163,9 @@ cd infrastructure/scripts
 
 # 3. Desplegar SES (usa el SNS Topic creado en paso 2)
 ./deploy-ses.sh dev https://mscorreos-dev.acosux.com/sns/notifications
+
+# 4. Desplegar S3 bucket para adjuntos
+./deploy-s3.sh dev
 ```
 
 **Nota**: El script `deploy-ses.sh` despliega tanto SNS como SES. Si prefiere desplegar SNS por separado, use `deploy-sns.sh` primero.
@@ -250,6 +285,41 @@ chmod +x delete-ses.sh
 
 **⚠️ ADVERTENCIA**: Esta operación eliminará la configuración de SES pero NO las identidades verificadas.
 
+### Desplegar Amazon S3
+
+```bash
+cd infrastructure/scripts
+chmod +x deploy-s3.sh
+./deploy-s3.sh [dev|test|prod]
+```
+
+Ejemplo para ambiente de desarrollo:
+```bash
+./deploy-s3.sh dev
+```
+
+El script:
+1. Despliega bucket S3 para adjuntos
+2. Configura versionamiento y cifrado
+3. Configura política de ciclo de vida (7 días)
+4. Configura políticas de acceso para productores y consumidores
+5. Configura alarmas de CloudWatch
+6. Verifica la configuración completa
+
+**Documentación detallada**: Ver [S3_CONFIGURATION_GUIDE.md](./S3_CONFIGURATION_GUIDE.md)
+
+**Referencia rápida**: Ver [S3_QUICK_REFERENCE.md](./S3_QUICK_REFERENCE.md)
+
+### Eliminar Amazon S3
+
+```bash
+cd infrastructure/scripts
+chmod +x delete-s3.sh
+./delete-s3.sh [dev|test|prod]
+```
+
+**⚠️ ADVERTENCIA**: Esta operación eliminará el bucket S3 y todos los archivos que contenga.
+
 ## Configuración de la Aplicación
 
 Después del despliegue, configure las siguientes variables de entorno en la aplicación MSCorreos:
@@ -276,6 +346,10 @@ aws.region=us-east-1
 aws.sqs.max-number-of-messages=10
 aws.sqs.wait-time-seconds=20
 aws.sqs.visibility-timeout=30
+
+# Bucket S3 para adjuntos
+aws.s3.bucket=${S3_BUCKET_ADJUNTOS}
+aws.s3.max-attachment-size=10485760
 ```
 
 ## Obtener URLs de las Colas
@@ -384,16 +458,21 @@ Los costos de SQS son muy bajos:
 - [Referencia Rápida SNS](./SNS_QUICK_REFERENCE.md)
 - [Guía de Configuración SES](./SES_CONFIGURATION_GUIDE.md)
 - [Referencia Rápida SES](./SES_QUICK_REFERENCE.md)
+- [Guía de Configuración S3](./S3_CONFIGURATION_GUIDE.md)
+- [Referencia Rápida S3](./S3_QUICK_REFERENCE.md)
 - [Resumen Task 2.1 (SQS)](./TASK_2.1_SUMMARY.md)
 - [Resumen Task 2.2 (SES)](./TASK_2.2_SUMMARY.md)
 - [Resumen Task 2.3 (SNS)](./TASK_2.3_SUMMARY.md)
+- [Resumen Task 2.4 (S3)](./TASK_2.4_SUMMARY.md)
 - [AWS SQS Documentation](https://docs.aws.amazon.com/sqs/)
 - [AWS SNS Documentation](https://docs.aws.amazon.com/sns/)
 - [AWS SES Documentation](https://docs.aws.amazon.com/ses/)
+- [AWS S3 Documentation](https://docs.aws.amazon.com/s3/)
 - [AWS CloudFormation SQS Reference](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html)
 - [SQS Best Practices](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-best-practices.html)
 - [SNS Best Practices](https://docs.aws.amazon.com/sns/latest/dg/sns-best-practices.html)
 - [SES Best Practices](https://docs.aws.amazon.com/ses/latest/dg/best-practices.html)
+- [S3 Best Practices](https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html)
 
 ## Soporte
 

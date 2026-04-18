@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowS3PutForAttachments",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectAcl"
+      ],
+      "Resource": [
+        "arn:aws:s3:::mscorreos-adjuntos-dev/*",
+        "arn:aws:s3:::mscorreos-adjuntos-test/*",
+        "arn:aws:s3:::mscorreos-adjuntos-prod/*"
+      ]
+    },
+    {
+      "Sid": "AllowS3ListBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": [
+        "arn:aws:s3:::mscorreos-adjuntos-dev",
+        "arn:aws:s3:::mscorreos-adjuntos-test",
+        "arn:aws:s3:::mscorreos-adjuntos-prod"
+      ]
+    }
+  ]
+}

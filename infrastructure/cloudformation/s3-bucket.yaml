@@ -1,0 +1,161 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Configuración de bucket S3 para adjuntos de MSCorreos - Sistema de Notificaciones por Email'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    Description: 'Ambiente de despliegue'
+
+Resources:
+  # Bucket S3 para almacenar adjuntos temporalmente
+  MSCorreosAdjuntosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'mscorreos-adjuntos-${Environment}'
+      # Habilitar versionamiento para recuperación de archivos
+      VersioningConfiguration:
+        Status: Enabled
+      # Cifrado en reposo usando AES-256
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      # Política de ciclo de vida: eliminar archivos después de 7 días (Requirement 13.5)
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldAttachments
+            Status: Enabled
+            ExpirationInDays: 7
+            NoncurrentVersionExpirationInDays: 1
+      # Bloquear acceso público
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # Tags para organización
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: EmailAttachments
+        - Key: DataRetention
+          Value: 7days
+
+  # Política de bucket para acceso de MSCorreos (Consumidor)
+  MSCorreosBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MSCorreosAdjuntosBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Permitir a MSCorreos leer y eliminar adjuntos
+          - Sid: AllowMSCorreosConsumerAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:role/MSCorreosECSTaskRole-${Environment}'
+            Action:
+              - s3:GetObject
+              - s3:DeleteObject
+            Resource: !Sub '${MSCorreosAdjuntosBucket.Arn}/*'
+          
+          # Permitir a MSCorreos listar objetos del bucket
+          - Sid: AllowMSCorreosListBucket
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:role/MSCorreosECSTaskRole-${Environment}'
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt MSCorreosAdjuntosBucket.Arn
+          
+          # Permitir a ShrimpSoftServer (Productor) subir adjuntos
+          - Sid: AllowProducersUpload
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:role/ShrimpSoftServerRole-${Environment}'
+            Action:
+              - s3:PutObject
+              - s3:PutObjectAcl
+            Resource: !Sub '${MSCorreosAdjuntosBucket.Arn}/*'
+          
+          # Permitir a ShrimpSoftServer listar objetos (para verificación)
+          - Sid: AllowProducersListBucket
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:role/ShrimpSoftServerRole-${Environment}'
+            Action:
+              - s3:ListBucket
+            Resource: !GetAtt MSCorreosAdjuntosBucket.Arn
+
+  # Métrica personalizada para monitorear tamaño del bucket
+  BucketSizeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-s3-bucket-size-${Environment}'
+      AlarmDescription: 'Alarma cuando el bucket S3 supera 10 GB'
+      MetricName: BucketSizeBytes
+      Namespace: AWS/S3
+      Statistic: Average
+      Period: 86400  # 1 día
+      EvaluationPeriods: 1
+      Threshold: 10737418240  # 10 GB en bytes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: BucketName
+          Value: !Ref MSCorreosAdjuntosBucket
+        - Name: StorageType
+          Value: StandardStorage
+      TreatMissingData: notBreaching
+
+  # Alarma para número de objetos en el bucket
+  BucketObjectCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-s3-object-count-${Environment}'
+      AlarmDescription: 'Alarma cuando el bucket tiene más de 10,000 objetos'
+      MetricName: NumberOfObjects
+      Namespace: AWS/S3
+      Statistic: Average
+      Period: 86400  # 1 día
+      EvaluationPeriods: 1
+      Threshold: 10000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: BucketName
+          Value: !Ref MSCorreosAdjuntosBucket
+        - Name: StorageType
+          Value: AllStorageTypes
+      TreatMissingData: notBreaching
+
+Outputs:
+  BucketName:
+    Description: 'Nombre del bucket S3 para adjuntos'
+    Value: !Ref MSCorreosAdjuntosBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+
+  BucketArn:
+    Description: 'ARN del bucket S3'
+    Value: !GetAtt MSCorreosAdjuntosBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketArn'
+
+  BucketDomainName:
+    Description: 'Domain name del bucket S3'
+    Value: !GetAtt MSCorreosAdjuntosBucket.DomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketDomainName'
+
+  BucketRegionalDomainName:
+    Description: 'Regional domain name del bucket S3'
+    Value: !GetAtt MSCorreosAdjuntosBucket.RegionalDomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketRegionalDomainName'
