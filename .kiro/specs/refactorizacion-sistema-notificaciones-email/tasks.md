@@ -72,7 +72,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Para Soft Bounce: incrementar contador y bloquear si >= 3 en 30 días
     - _Requirements: 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 6.2, 6.3, 6.4, 6.5_
 
-  - [ ] 4.4 Implementar caso de uso: ConsultarNotificacionesUseCase
+  - [x] 4.4 Implementar caso de uso: ConsultarNotificacionesUseCase
     - Aplicar filtros (empresa, ruc, tipo, fechas, destinatario, tipo_notificacion)
     - Implementar paginación
     - Retornar DTOs con campos requeridos
