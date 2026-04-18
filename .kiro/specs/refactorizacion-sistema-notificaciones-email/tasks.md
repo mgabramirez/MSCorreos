@@ -37,7 +37,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Implementar ClaveAcceso con validación de 49 dígitos
     - _Requirements: 13.5_
 
-  - [ ] 3.3 Crear interfaces de repositorio
+  - [x] 3.3 Crear interfaces de repositorio
     - Definir NotificacionesRepository con métodos de consulta
     - Definir ListaNegraRepository con findByEmailAndActivoTrue()
     - Definir ListaNegraHistorialRepository
