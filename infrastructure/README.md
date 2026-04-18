@@ -13,13 +13,18 @@ infrastructure/
 ├── scripts/
 │   ├── deploy-sqs.sh            # Script de despliegue SQS
 │   ├── delete-sqs.sh            # Script de eliminación SQS
+│   ├── deploy-sns.sh            # Script de despliegue SNS
+│   ├── delete-sns.sh            # Script de eliminación SNS
 │   ├── deploy-ses.sh            # Script de despliegue SES
 │   └── delete-ses.sh            # Script de eliminación SES
 ├── DEPLOYMENT_GUIDE.md          # Guía de despliegue SQS
+├── SNS_CONFIGURATION_GUIDE.md   # Guía completa de configuración SNS
+├── SNS_QUICK_REFERENCE.md       # Referencia rápida SNS
 ├── SES_CONFIGURATION_GUIDE.md   # Guía completa de configuración SES
 ├── SES_QUICK_REFERENCE.md       # Referencia rápida SES
 ├── TASK_2.1_SUMMARY.md          # Resumen Task 2.1 (SQS)
 ├── TASK_2.2_SUMMARY.md          # Resumen Task 2.2 (SES)
+├── TASK_2.3_SUMMARY.md          # Resumen Task 2.3 (SNS)
 └── README.md                     # Este archivo
 ```
 
@@ -58,6 +63,20 @@ El sistema utiliza tres colas SQS:
 - **Standard Queue Depth**: Se activa cuando la cola Standard tiene más de 1000 mensajes
 - **FIFO Queue Depth**: Se activa cuando la cola FIFO tiene más de 500 mensajes
 
+### Amazon SNS (Task 2.3)
+
+El sistema utiliza Amazon SNS para recibir eventos de tracking de SES:
+
+1. **SNS Topic** (`mscorreos-tracking-events-{env}`)
+   - Recibe eventos de SES (send, delivery, open, bounce, complaint, reject, renderingFailure)
+   - Política de acceso para SES
+   - Suscripción HTTPS al endpoint de MSCorreos
+   - Alarma para mensajes no entregados
+
+### Alarmas CloudWatch (SNS)
+
+- **Failed SNS Notifications**: Se activa cuando SNS no puede entregar > 5 mensajes en 5 minutos
+
 ### Amazon SES (Task 2.2)
 
 El sistema utiliza Amazon SES para envío de correos con tracking completo:
@@ -68,12 +87,7 @@ El sistema utiliza Amazon SES para envío de correos con tracking completo:
    - Supresión automática de bounces y complaints
    - Event Destination configurado hacia SNS
 
-2. **SNS Topic** (`mscorreos-tracking-events-{env}`)
-   - Recibe eventos de SES (send, delivery, open, bounce, complaint, reject, renderingFailure)
-   - Política de acceso para SES
-   - Suscripción HTTPS al endpoint de MSCorreos
-
-3. **Identidades Verificadas**
+2. **Identidades Verificadas**
    - Dominio: `documentos-electronicos.info`
    - Email: `notificaciones@documentos-electronicos.info`
 
@@ -82,7 +96,6 @@ El sistema utiliza Amazon SES para envío de correos con tracking completo:
 - **High Bounce Rate**: Se activa cuando bounce rate > 5%
 - **High Complaint Rate**: Se activa cuando complaint rate > 0.1%
 - **High Reject Rate**: Se activa cuando hay > 10 rechazos en 5 minutos
-- **Failed SNS Notifications**: Se activa cuando SNS no puede entregar > 5 mensajes
 
 ## Requisitos Previos
 
@@ -105,7 +118,7 @@ El sistema utiliza Amazon SES para envío de correos con tracking completo:
 
 ### Desplegar Infraestructura Completa
 
-Para desplegar toda la infraestructura (SQS + SES):
+Para desplegar toda la infraestructura (SQS + SNS + SES):
 
 ```bash
 cd infrastructure/scripts
@@ -113,9 +126,14 @@ cd infrastructure/scripts
 # 1. Desplegar colas SQS
 ./deploy-sqs.sh dev
 
-# 2. Desplegar SES (requiere endpoint de MSCorreos)
+# 2. Desplegar SNS Topic (requiere endpoint de MSCorreos)
+./deploy-sns.sh dev https://mscorreos-dev.acosux.com/sns/notifications
+
+# 3. Desplegar SES (usa el SNS Topic creado en paso 2)
 ./deploy-ses.sh dev https://mscorreos-dev.acosux.com/sns/notifications
 ```
+
+**Nota**: El script `deploy-ses.sh` despliega tanto SNS como SES. Si prefiere desplegar SNS por separado, use `deploy-sns.sh` primero.
 
 ### Desplegar Solo Colas SQS
 
@@ -163,6 +181,40 @@ chmod +x delete-sqs.sh
 ```
 
 **⚠️ ADVERTENCIA**: Esta operación eliminará todas las colas y los mensajes que contengan.
+
+### Desplegar Amazon SNS
+
+```bash
+cd infrastructure/scripts
+chmod +x deploy-sns.sh
+./deploy-sns.sh [dev|test|prod] [mscorreos-endpoint-url]
+```
+
+Ejemplo para ambiente de desarrollo:
+```bash
+./deploy-sns.sh dev https://mscorreos-dev.acosux.com/sns/notifications
+```
+
+El script:
+1. Despliega SNS Topic para tracking de eventos
+2. Configura política de acceso para SES
+3. Crea suscripción HTTPS al endpoint de MSCorreos
+4. Configura alarma de CloudWatch
+5. Muestra instrucciones para confirmar suscripción
+
+**Documentación detallada**: Ver [SNS_CONFIGURATION_GUIDE.md](./SNS_CONFIGURATION_GUIDE.md)
+
+**Referencia rápida**: Ver [SNS_QUICK_REFERENCE.md](./SNS_QUICK_REFERENCE.md)
+
+### Eliminar Amazon SNS
+
+```bash
+cd infrastructure/scripts
+chmod +x delete-sns.sh
+./delete-sns.sh [dev|test|prod]
+```
+
+**⚠️ ADVERTENCIA**: Esta operación eliminará el SNS Topic y detendrá el tracking de eventos de SES.
 
 ### Desplegar Amazon SES
 
@@ -328,15 +380,19 @@ Los costos de SQS son muy bajos:
 ## Referencias
 
 - [Guía de Despliegue SQS](./DEPLOYMENT_GUIDE.md)
+- [Guía de Configuración SNS](./SNS_CONFIGURATION_GUIDE.md)
+- [Referencia Rápida SNS](./SNS_QUICK_REFERENCE.md)
 - [Guía de Configuración SES](./SES_CONFIGURATION_GUIDE.md)
 - [Referencia Rápida SES](./SES_QUICK_REFERENCE.md)
 - [Resumen Task 2.1 (SQS)](./TASK_2.1_SUMMARY.md)
 - [Resumen Task 2.2 (SES)](./TASK_2.2_SUMMARY.md)
+- [Resumen Task 2.3 (SNS)](./TASK_2.3_SUMMARY.md)
 - [AWS SQS Documentation](https://docs.aws.amazon.com/sqs/)
-- [AWS SES Documentation](https://docs.aws.amazon.com/ses/)
 - [AWS SNS Documentation](https://docs.aws.amazon.com/sns/)
+- [AWS SES Documentation](https://docs.aws.amazon.com/ses/)
 - [AWS CloudFormation SQS Reference](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html)
 - [SQS Best Practices](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-best-practices.html)
+- [SNS Best Practices](https://docs.aws.amazon.com/sns/latest/dg/sns-best-practices.html)
 - [SES Best Practices](https://docs.aws.amazon.com/ses/latest/dg/best-practices.html)
 
 ## Soporte
