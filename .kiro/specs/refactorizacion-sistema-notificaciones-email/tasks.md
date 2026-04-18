@@ -44,7 +44,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Definir PlantillaRepository con findByEmpresaAndTipoNotificacion()
     - _Requirements: 2.1, 6.1, 7.1, 7.2_
 
-  - [ ] 3.4 Crear enums del dominio
+  - [x] 3.4 Crear enums del dominio
     - Crear TipoEvento (SEND, DELIVERY, OPEN, BOUNCE_TRANSIENT, BOUNCE_PERMANENT, COMPLAINT, BLOCKED)
     - Crear TipoBloqueo (HARD_BOUNCE, SOFT_BOUNCE_REPETIDO, COMPLAINT, MANUAL)
     - Crear AccionListaNegra (AGREGAR, REMOVER)
