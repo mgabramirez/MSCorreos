@@ -32,7 +32,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Implementar Plantilla (futuro)
     - _Requirements: 2.1, 2.2, 6.1, 6.7_
 
-  - [ ] 3.2 Crear Value Objects
+  - [x] 3.2 Crear Value Objects
     - Implementar EmailAddress con validación RFC 5322
     - Implementar ClaveAcceso con validación de 49 dígitos
     - _Requirements: 13.5_
