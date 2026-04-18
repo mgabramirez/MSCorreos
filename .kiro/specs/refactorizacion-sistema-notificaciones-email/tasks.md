@@ -64,7 +64,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Definir GestionarListaNegraUseCase
     - _Requirements: 5.1, 7.1, 8.1_
 
-  - [ ] 4.3 Implementar caso de uso: ProcesarEventoTrackingUseCase
+  - [x] 4.3 Implementar caso de uso: ProcesarEventoTrackingUseCase
     - Extraer metadatos de tags (empresa, ruc, clave, tipo_notificacion)
     - Registrar evento en cor_notificaciones según tipo (Send, Delivery, Open, Bounce, Complaint)
     - Para Bounce Permanent: agregar a lista negra automáticamente con tipo HARD_BOUNCE
