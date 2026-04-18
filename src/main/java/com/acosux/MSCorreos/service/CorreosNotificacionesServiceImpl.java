@@ -25,6 +25,9 @@ public class CorreosNotificacionesServiceImpl implements CorreosNotificacionesSe
 
     @Autowired
     private CorreosNotificacionDao notificacionDao;
+    
+    @Autowired
+    private BlacklistEmailService blacklistService;
 
     @Override
     public void insertarNotificacion(String json) throws Exception {
@@ -89,21 +92,37 @@ public class CorreosNotificacionesServiceImpl implements CorreosNotificacionesSe
 
         switch (tipoEvento) {
             case "Send":
-                notificacionVenta.setnDestinatario(commonheaders.get("to").toString());
+                String destinatarioSend = commonheaders.get("to").toString();
+                // Verificar blacklist antes de registrar
+                if (blacklistService.isEmailBloqueado(destinatarioSend)) {
+                    System.out.println("Email en blacklist, no se procesará: " + destinatarioSend);
+                    return;
+                }
+                notificacionVenta.setnDestinatario(destinatarioSend);
                 String f = (String) mail.get("timestamp");
                 notificacionVenta.setnFecha(CorreosUtil.timestamp(f));
                 notificacionDao.insertar(notificacionVenta);
                 break;
             case "Delivery":
                 Map<String, Object> delivery = (Map<String, Object>) mensaje.get("delivery");
-                notificacionVenta.setnDestinatario(delivery.get("recipients").toString());
+                String destinatarioDelivery = delivery.get("recipients").toString();
+                if (blacklistService.isEmailBloqueado(destinatarioDelivery)) {
+                    System.out.println("Email en blacklist, no se procesará: " + destinatarioDelivery);
+                    return;
+                }
+                notificacionVenta.setnDestinatario(destinatarioDelivery);
                 String f2 = (String) delivery.get("timestamp");
                 notificacionVenta.setnFecha(CorreosUtil.timestamp(f2));
                 notificacionDao.insertar(notificacionVenta);
                 break;
             case "Open":
                 Map<String, Object> open = (Map<String, Object>) mensaje.get("open");
-                notificacionVenta.setnDestinatario(commonheaders.get("to").toString());
+                String destinatarioOpen = commonheaders.get("to").toString();
+                if (blacklistService.isEmailBloqueado(destinatarioOpen)) {
+                    System.out.println("Email en blacklist, no se procesará: " + destinatarioOpen);
+                    return;
+                }
+                notificacionVenta.setnDestinatario(destinatarioOpen);
                 String f3 = (String) open.get("timestamp");
                 notificacionVenta.setnFecha(CorreosUtil.timestamp(f3));
                 notificacionDao.insertar(notificacionVenta);
@@ -116,16 +135,29 @@ public class CorreosNotificacionesServiceImpl implements CorreosNotificacionesSe
                         for (Map<String, Object> bouncedRecipient : bouncedRecipients) {
                             CorreosNotificaciones notificacion = new CorreosNotificaciones();
                             notificacion.setnEmpresa(empresa);
-                            notificacionVenta.setnRuc(ruc);
-                            notificacionVenta.setnClave(clave);
+                            notificacion.setnRuc(ruc);
+                            notificacion.setnClave(clave);
                             notificacion.setnInforme(json);
-                            notificacionVenta.setnTipoNotificacion(tipoNot);
+                            notificacion.setnTipoNotificacion(tipoNot);
                             notificacion.setnTipo(tipoEvento + bounce.get("bounceType").toString());
                             String f4 = (String) bounce.get("timestamp");
                             notificacion.setnFecha(CorreosUtil.timestamp(f4));
                             Map<String, Object> recipiente = bouncedRecipient;
-                            notificacion.setnDestinatario(recipiente.get("emailAddress").toString());
+                            String emailAddress = recipiente.get("emailAddress").toString();
+                            notificacion.setnDestinatario(emailAddress);
                             notificacion.setnObservacion(recipiente.get("diagnosticCode").toString());
+                            
+                            // Auto-agregar a blacklist si es bounce permanente
+                            String bounceType = bounce.get("bounceType").toString();
+                            if ("permanent".equalsIgnoreCase(bounceType)) {
+                                try {
+                                    blacklistService.agregarEmail(emailAddress, "Bounce permanente: " + bounce.get("bounceType"), "sistema");
+                                    System.out.println("Email agregado a blacklist por bounce permanente: " + emailAddress);
+                                } catch (Exception e) {
+                                    System.out.println("Error al agregar a blacklist: " + e.getMessage());
+                                }
+                            }
+                            
                             notificacionDao.insertar(notificacion);
                         }
                     }
@@ -140,15 +172,25 @@ public class CorreosNotificacionesServiceImpl implements CorreosNotificacionesSe
                         for (Map<String, Object> complaintRecipient : complaintRecipients) {
                             CorreosNotificaciones notificacion = new CorreosNotificaciones();
                             notificacion.setnEmpresa(empresa);
-                            notificacionVenta.setnRuc(ruc);
-                            notificacionVenta.setnClave(clave);
+                            notificacion.setnRuc(ruc);
+                            notificacion.setnClave(clave);
                             notificacion.setnInforme(json);
                             notificacion.setnTipo(tipoEvento);
-                            notificacionVenta.setnTipoNotificacion(tipoNot);
+                            notificacion.setnTipoNotificacion(tipoNot);
                             String f4 = (String) complaint.get("timestamp");
                             notificacion.setnFecha(CorreosUtil.timestamp(f4));
                             Map<String, Object> recipiente = complaintRecipient;
-                            notificacion.setnDestinatario(recipiente.get("emailAddress").toString());
+                            String emailAddress = recipiente.get("emailAddress").toString();
+                            notificacion.setnDestinatario(emailAddress);
+                            
+                            // Auto-agregar a blacklist por complaint
+                            try {
+                                blacklistService.agregarEmail(emailAddress, "Complaint (reclamo)", "sistema");
+                                System.out.println("Email agregado a blacklist por complaint: " + emailAddress);
+                            } catch (Exception e) {
+                                System.out.println("Error al agregar a blacklist: " + e.getMessage());
+                            }
+                            
                             notificacionDao.insertar(notificacion);
                         }
                     }
