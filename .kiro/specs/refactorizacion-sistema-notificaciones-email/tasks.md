@@ -51,7 +51,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - _Requirements: 5.3, 5.4, 5.7, 5.8, 6.2, 6.3, 6.4, 6.5_
 
 - [ ] 4. Implementar capa de aplicación (Application Layer)
-  - [ ] 4.1 Crear DTOs
+  - [x] 4.1 Crear DTOs
     - Implementar TrackingEventDTO y clases relacionadas (MailInfo, BounceInfo, ComplaintInfo, DeliveryInfo, OpenInfo)
     - Implementar NotificacionDTO y NotificacionDetalleDTO
     - Implementar ListaNegraDTO y AgregarListaNegraRequest
