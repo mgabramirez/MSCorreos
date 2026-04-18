@@ -10,7 +10,8 @@ infrastructure/
 │   ├── sqs-queues.yaml          # Definición de colas SQS
 │   ├── sns-topic.yaml           # Topic SNS para tracking de SES
 │   ├── ses-configuration.yaml   # Configuration Set de SES
-│   └── s3-bucket.yaml           # Bucket S3 para adjuntos
+│   ├── s3-bucket.yaml           # Bucket S3 para adjuntos
+│   └── cloudwatch.yaml          # Log Groups, Métricas y Alarmas
 ├── config/
 │   ├── iam-policy-mscorreos-s3.json    # Política IAM para MSCorreos (S3)
 │   └── iam-policy-shrimpsoft-s3.json   # Política IAM para ShrimpSoftServer (S3)
@@ -22,10 +23,13 @@ infrastructure/
 │   ├── deploy-ses.sh            # Script de despliegue SES
 │   ├── delete-ses.sh            # Script de eliminación SES
 │   ├── deploy-s3.sh             # Script de despliegue S3
-│   └── delete-s3.sh             # Script de eliminación S3
+│   ├── delete-s3.sh             # Script de eliminación S3
+│   ├── deploy-cloudwatch.sh     # Script de despliegue CloudWatch
+│   └── delete-cloudwatch.sh     # Script de eliminación CloudWatch
 ├── terraform/
 │   ├── main.tf                  # Configuración principal Terraform
-│   └── s3.tf                    # Configuración S3 Terraform
+│   ├── s3.tf                    # Configuración S3 Terraform
+│   └── cloudwatch.tf            # Configuración CloudWatch Terraform
 ├── DEPLOYMENT_GUIDE.md          # Guía de despliegue SQS
 ├── SNS_CONFIGURATION_GUIDE.md   # Guía completa de configuración SNS
 ├── SNS_QUICK_REFERENCE.md       # Referencia rápida SNS
@@ -33,10 +37,13 @@ infrastructure/
 ├── SES_QUICK_REFERENCE.md       # Referencia rápida SES
 ├── S3_CONFIGURATION_GUIDE.md    # Guía completa de configuración S3
 ├── S3_QUICK_REFERENCE.md        # Referencia rápida S3
+├── CLOUDWATCH_CONFIGURATION_GUIDE.md  # Guía completa de configuración CloudWatch
+├── CLOUDWATCH_QUICK_REFERENCE.md      # Referencia rápida CloudWatch
 ├── TASK_2.1_SUMMARY.md          # Resumen Task 2.1 (SQS)
 ├── TASK_2.2_SUMMARY.md          # Resumen Task 2.2 (SES)
 ├── TASK_2.3_SUMMARY.md          # Resumen Task 2.3 (SNS)
 ├── TASK_2.4_SUMMARY.md          # Resumen Task 2.4 (S3)
+├── TASK_2.5_SUMMARY.md          # Resumen Task 2.5 (CloudWatch)
 └── README.md                     # Este archivo
 ```
 
@@ -129,6 +136,37 @@ El sistema utiliza Amazon S3 para almacenar temporalmente adjuntos de correos:
 - **Bucket Size Alarm**: Se activa cuando el bucket supera 10 GB
 - **Object Count Alarm**: Se activa cuando el bucket tiene más de 10,000 objetos
 
+### Amazon CloudWatch (Task 2.5)
+
+El sistema utiliza Amazon CloudWatch para observabilidad completa:
+
+1. **Log Groups** (Retención: 30 días)
+   - `/aws/mscorreos/{env}` - Logs generales de la aplicación
+   - `/aws/mscorreos/{env}/sqs-consumer` - Logs del consumidor SQS
+   - `/aws/mscorreos/{env}/email-service` - Logs del servicio de email
+   - `/aws/mscorreos/{env}/sns-listener` - Logs del listener SNS
+   - `/aws/mscorreos/{env}/blacklist-service` - Logs del servicio de lista negra
+
+2. **Métricas Personalizadas** (Namespace: MSCorreos)
+   - `CorreosEnviados` - Total de correos enviados
+   - `CorreosFallidos` - Total de correos fallidos
+   - `CorreosBloqueados` - Total de correos bloqueados por lista negra
+   - `ErrorCount` - Total de errores de aplicación
+   - `TiempoProcesamiento` - Tiempo de procesamiento de mensajes
+   - `TotalCorreosListaNegra` - Total de correos en lista negra
+
+3. **Dashboard CloudWatch**
+   - `MSCorreos-{env}` - Dashboard con métricas y logs
+
+### Alarmas CloudWatch (Aplicación)
+
+- **Error Rate Alarm**: Se activa cuando hay más de 5 errores en 5 minutos
+- **Processing Time Alarm**: Se activa cuando el tiempo promedio de procesamiento supera 5 segundos
+- **Blacklist Size Alarm**: Se activa cuando la lista negra supera 1000 correos
+- **DLQ Messages Alarm**: Se activa cuando la DLQ contiene más de 10 mensajes
+- **Consecutive Failures Alarm**: Se activa cuando hay más de 10 correos fallidos consecutivos
+- **High Blocked Emails Alarm**: Se activa cuando se bloquean más de 50 correos en 5 minutos
+
 ## Requisitos Previos
 
 1. **AWS CLI** instalado y configurado
@@ -150,7 +188,7 @@ El sistema utiliza Amazon S3 para almacenar temporalmente adjuntos de correos:
 
 ### Desplegar Infraestructura Completa
 
-Para desplegar toda la infraestructura (SQS + SNS + SES + S3):
+Para desplegar toda la infraestructura (SQS + SNS + SES + S3 + CloudWatch):
 
 ```bash
 cd infrastructure/scripts
@@ -166,6 +204,11 @@ cd infrastructure/scripts
 
 # 4. Desplegar S3 bucket para adjuntos
 ./deploy-s3.sh dev
+
+# 5. Desplegar CloudWatch (logs, métricas y alarmas)
+./deploy-cloudwatch.sh dev
+# O con notificaciones por email:
+./deploy-cloudwatch.sh dev admin@example.com
 ```
 
 **Nota**: El script `deploy-ses.sh` despliega tanto SNS como SES. Si prefiere desplegar SNS por separado, use `deploy-sns.sh` primero.
@@ -320,6 +363,45 @@ chmod +x delete-s3.sh
 
 **⚠️ ADVERTENCIA**: Esta operación eliminará el bucket S3 y todos los archivos que contenga.
 
+### Desplegar Amazon CloudWatch
+
+```bash
+cd infrastructure/scripts
+chmod +x deploy-cloudwatch.sh
+./deploy-cloudwatch.sh [dev|test|prod] [email-opcional]
+```
+
+Ejemplo para ambiente de desarrollo:
+```bash
+# Sin notificaciones por email
+./deploy-cloudwatch.sh dev
+
+# Con notificaciones por email
+./deploy-cloudwatch.sh dev admin@example.com
+```
+
+El script:
+1. Despliega Log Groups con retención de 30 días
+2. Configura Metric Filters para extraer métricas desde logs
+3. Crea 6 alarmas de CloudWatch
+4. Configura SNS Topic para notificaciones
+5. Crea Dashboard de CloudWatch
+6. Muestra información de los recursos creados
+
+**Documentación detallada**: Ver [CLOUDWATCH_CONFIGURATION_GUIDE.md](./CLOUDWATCH_CONFIGURATION_GUIDE.md)
+
+**Referencia rápida**: Ver [CLOUDWATCH_QUICK_REFERENCE.md](./CLOUDWATCH_QUICK_REFERENCE.md)
+
+### Eliminar Amazon CloudWatch
+
+```bash
+cd infrastructure/scripts
+chmod +x delete-cloudwatch.sh
+./delete-cloudwatch.sh [dev|test|prod]
+```
+
+**⚠️ ADVERTENCIA**: Esta operación eliminará todos los Log Groups (los logs se perderán), alarmas, métricas y el dashboard.
+
 ## Configuración de la Aplicación
 
 Después del despliegue, configure las siguientes variables de entorno en la aplicación MSCorreos:
@@ -460,19 +542,24 @@ Los costos de SQS son muy bajos:
 - [Referencia Rápida SES](./SES_QUICK_REFERENCE.md)
 - [Guía de Configuración S3](./S3_CONFIGURATION_GUIDE.md)
 - [Referencia Rápida S3](./S3_QUICK_REFERENCE.md)
+- [Guía de Configuración CloudWatch](./CLOUDWATCH_CONFIGURATION_GUIDE.md)
+- [Referencia Rápida CloudWatch](./CLOUDWATCH_QUICK_REFERENCE.md)
 - [Resumen Task 2.1 (SQS)](./TASK_2.1_SUMMARY.md)
 - [Resumen Task 2.2 (SES)](./TASK_2.2_SUMMARY.md)
 - [Resumen Task 2.3 (SNS)](./TASK_2.3_SUMMARY.md)
 - [Resumen Task 2.4 (S3)](./TASK_2.4_SUMMARY.md)
+- [Resumen Task 2.5 (CloudWatch)](./TASK_2.5_SUMMARY.md)
 - [AWS SQS Documentation](https://docs.aws.amazon.com/sqs/)
 - [AWS SNS Documentation](https://docs.aws.amazon.com/sns/)
 - [AWS SES Documentation](https://docs.aws.amazon.com/ses/)
 - [AWS S3 Documentation](https://docs.aws.amazon.com/s3/)
+- [AWS CloudWatch Documentation](https://docs.aws.amazon.com/cloudwatch/)
 - [AWS CloudFormation SQS Reference](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html)
 - [SQS Best Practices](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-best-practices.html)
 - [SNS Best Practices](https://docs.aws.amazon.com/sns/latest/dg/sns-best-practices.html)
 - [SES Best Practices](https://docs.aws.amazon.com/ses/latest/dg/best-practices.html)
 - [S3 Best Practices](https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html)
+- [CloudWatch Best Practices](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Best_Practice_Recommended_Alarms_AWS_Services.html)
 
 ## Soporte
 

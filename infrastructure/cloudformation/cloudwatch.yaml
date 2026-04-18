@@ -1,0 +1,510 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Configuración de CloudWatch para MSCorreos - Logs, Métricas y Alarmas'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    Description: 'Ambiente de despliegue'
+  
+  AlarmEmail:
+    Type: String
+    Default: ''
+    Description: 'Email para notificaciones de alarmas (opcional)'
+
+Conditions:
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
+
+Resources:
+  # ============================================================================
+  # LOG GROUPS - Retención de 30 días (Requirement 8.7)
+  # ============================================================================
+  
+  # Log Group para la aplicación MSCorreos
+  MSCorreosLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/mscorreos/${Environment}'
+      RetentionInDays: 30
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: ApplicationLogs
+
+  # Log Group para SQS Consumer
+  SQSConsumerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/mscorreos/${Environment}/sqs-consumer'
+      RetentionInDays: 30
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: SQSConsumer
+
+  # Log Group para Email Service
+  EmailServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/mscorreos/${Environment}/email-service'
+      RetentionInDays: 30
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: EmailService
+
+  # Log Group para SNS Listener
+  SNSListenerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/mscorreos/${Environment}/sns-listener'
+      RetentionInDays: 30
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: SNSListener
+
+  # Log Group para Blacklist Service
+  BlacklistServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/mscorreos/${Environment}/blacklist-service'
+      RetentionInDays: 30
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: BlacklistService
+
+  # ============================================================================
+  # METRIC FILTERS - Para crear métricas personalizadas desde logs
+  # ============================================================================
+  
+  # Filtro para contar errores en logs
+  ErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '[timestamp, level=ERROR*, ...]'
+      LogGroupName: !Ref MSCorreosLogGroup
+      MetricTransformations:
+        - MetricName: ErrorCount
+          MetricNamespace: MSCorreos
+          MetricValue: '1'
+          DefaultValue: 0
+          Unit: Count
+          Dimensions:
+            - Key: Environment
+              Value: !Ref Environment
+
+  # Filtro para contar correos enviados
+  EmailsSentMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '[timestamp, level, message="Email sent successfully"*, ...]'
+      LogGroupName: !Ref EmailServiceLogGroup
+      MetricTransformations:
+        - MetricName: CorreosEnviados
+          MetricNamespace: MSCorreos
+          MetricValue: '1'
+          DefaultValue: 0
+          Unit: Count
+          Dimensions:
+            - Key: Environment
+              Value: !Ref Environment
+
+  # Filtro para contar correos fallidos
+  EmailsFailedMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '[timestamp, level=ERROR, message="Failed to send email"*, ...]'
+      LogGroupName: !Ref EmailServiceLogGroup
+      MetricTransformations:
+        - MetricName: CorreosFallidos
+          MetricNamespace: MSCorreos
+          MetricValue: '1'
+          DefaultValue: 0
+          Unit: Count
+          Dimensions:
+            - Key: Environment
+              Value: !Ref Environment
+
+  # Filtro para contar correos bloqueados por lista negra
+  EmailsBlockedMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '[timestamp, level, message="Email blocked by blacklist"*, ...]'
+      LogGroupName: !Ref BlacklistServiceLogGroup
+      MetricTransformations:
+        - MetricName: CorreosBloqueados
+          MetricNamespace: MSCorreos
+          MetricValue: '1'
+          DefaultValue: 0
+          Unit: Count
+          Dimensions:
+            - Key: Environment
+              Value: !Ref Environment
+
+  # ============================================================================
+  # SNS TOPIC - Para notificaciones de alarmas
+  # ============================================================================
+  
+  AlarmNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'mscorreos-alarms-${Environment}'
+      DisplayName: !Sub 'MSCorreos Alarmas - ${Environment}'
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+
+  AlarmEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref AlarmNotificationTopic
+      Endpoint: !Ref AlarmEmail
+
+  # ============================================================================
+  # ALARMAS - CloudWatch Alarms (Requirements 8.3, 8.4, 8.5, 16.15)
+  # ============================================================================
+  
+  # Alarma: Tasa de errores > 5% en 5 minutos (Requirement 8.4)
+  ErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-error-rate-${Environment}'
+      AlarmDescription: 'Alarma cuando la tasa de errores supera el 5% en 5 minutos'
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref AlarmNotificationTopic
+      MetricName: ErrorCount
+      Namespace: MSCorreos
+      Statistic: Sum
+      Period: 300  # 5 minutos
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Severity
+          Value: High
+
+  # Alarma: Tiempo de procesamiento promedio > 5 segundos (Requirement 8.5)
+  ProcessingTimeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-processing-time-${Environment}'
+      AlarmDescription: 'Alarma cuando el tiempo de procesamiento promedio supera 5 segundos'
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref AlarmNotificationTopic
+      MetricName: TiempoProcesamiento
+      Namespace: MSCorreos
+      Statistic: Average
+      Period: 300  # 5 minutos
+      EvaluationPeriods: 2
+      Threshold: 5000  # 5 segundos en milisegundos
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+      Unit: Milliseconds
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Severity
+          Value: Medium
+
+  # Alarma: Lista negra > 1000 correos (Requirement 16.15)
+  BlacklistSizeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-blacklist-size-${Environment}'
+      AlarmDescription: 'Alarma cuando la lista negra supera 1000 correos electrónicos'
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref AlarmNotificationTopic
+      MetricName: TotalCorreosListaNegra
+      Namespace: MSCorreos
+      Statistic: Maximum
+      Period: 3600  # 1 hora
+      EvaluationPeriods: 1
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Severity
+          Value: High
+
+  # Alarma: DLQ con más de 10 mensajes (Requirement 8.3)
+  # Nota: Esta alarma ya existe en sqs-queues.yaml, pero la incluimos aquí para referencia
+  DLQMessagesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-dlq-high-messages-${Environment}'
+      AlarmDescription: 'Alarma cuando la DLQ contiene más de 10 mensajes'
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref AlarmNotificationTopic
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Average
+      Period: 300  # 5 minutos
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !Sub 'mscorreos-dlq-${Environment}'
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Severity
+          Value: Critical
+
+  # Alarma: Correos fallidos consecutivos
+  ConsecutiveFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-consecutive-failures-${Environment}'
+      AlarmDescription: 'Alarma cuando hay más de 10 correos fallidos consecutivos'
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref AlarmNotificationTopic
+      MetricName: CorreosFallidos
+      Namespace: MSCorreos
+      Statistic: Sum
+      Period: 60  # 1 minuto
+      EvaluationPeriods: 3
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Severity
+          Value: High
+
+  # Alarma: Correos bloqueados por lista negra (alta tasa)
+  HighBlockedEmailsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'mscorreos-high-blocked-emails-${Environment}'
+      AlarmDescription: 'Alarma cuando se bloquean más de 50 correos en 5 minutos'
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref AlarmNotificationTopic
+      MetricName: CorreosBloqueados
+      Namespace: MSCorreos
+      Statistic: Sum
+      Period: 300  # 5 minutos
+      EvaluationPeriods: 1
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Application
+          Value: MSCorreos
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Severity
+          Value: Medium
+
+  # ============================================================================
+  # DASHBOARD - CloudWatch Dashboard para visualización
+  # ============================================================================
+  
+  MSCorreosDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub 'MSCorreos-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["MSCorreos", "CorreosEnviados", {"stat": "Sum", "label": "Correos Enviados"}],
+                  [".", "CorreosFallidos", {"stat": "Sum", "label": "Correos Fallidos"}],
+                  [".", "CorreosBloqueados", {"stat": "Sum", "label": "Correos Bloqueados"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Correos - Resumen",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "label": "Count"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["MSCorreos", "TiempoProcesamiento", {"stat": "Average", "label": "Promedio"}],
+                  ["...", {"stat": "Maximum", "label": "Máximo"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Tiempo de Procesamiento (ms)",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "label": "Milliseconds"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", {"stat": "Average", "label": "Standard Queue"}, {"QueueName": "mscorreos-standard-${Environment}"}],
+                  ["...", {"QueueName": "mscorreos-alta-prioridad-${Environment}.fifo", "label": "FIFO Queue"}],
+                  ["...", {"QueueName": "mscorreos-dlq-${Environment}", "label": "DLQ"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Mensajes en Colas SQS",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "label": "Messages"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["MSCorreos", "ErrorCount", {"stat": "Sum", "label": "Errores"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Errores de Aplicación",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "label": "Count"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["MSCorreos", "TotalCorreosListaNegra", {"stat": "Maximum", "label": "Total en Lista Negra"}]
+                ],
+                "view": "singleValue",
+                "region": "${AWS::Region}",
+                "title": "Lista Negra - Total Correos"
+              }
+            },
+            {
+              "type": "log",
+              "properties": {
+                "query": "SOURCE '/aws/mscorreos/${Environment}'\n| fields @timestamp, level, message\n| filter level = 'ERROR'\n| sort @timestamp desc\n| limit 20",
+                "region": "${AWS::Region}",
+                "title": "Últimos Errores",
+                "stacked": false
+              }
+            }
+          ]
+        }
+
+Outputs:
+  MSCorreosLogGroupName:
+    Description: 'Nombre del Log Group principal de MSCorreos'
+    Value: !Ref MSCorreosLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroupName'
+
+  MSCorreosLogGroupArn:
+    Description: 'ARN del Log Group principal de MSCorreos'
+    Value: !GetAtt MSCorreosLogGroup.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroupArn'
+
+  AlarmTopicArn:
+    Description: 'ARN del SNS Topic para notificaciones de alarmas'
+    Value: !Ref AlarmNotificationTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-AlarmTopicArn'
+
+  DashboardURL:
+    Description: 'URL del Dashboard de CloudWatch'
+    Value: !Sub 'https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=MSCorreos-${Environment}'
+
+  ErrorRateAlarmName:
+    Description: 'Nombre de la alarma de tasa de errores'
+    Value: !Ref ErrorRateAlarm
+
+  ProcessingTimeAlarmName:
+    Description: 'Nombre de la alarma de tiempo de procesamiento'
+    Value: !Ref ProcessingTimeAlarm
+
+  BlacklistSizeAlarmName:
+    Description: 'Nombre de la alarma de tamaño de lista negra'
+    Value: !Ref BlacklistSizeAlarm
+
+  DLQMessagesAlarmName:
+    Description: 'Nombre de la alarma de mensajes en DLQ'
+    Value: !Ref DLQMessagesAlarm
