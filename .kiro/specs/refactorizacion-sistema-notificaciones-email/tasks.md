@@ -58,7 +58,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Implementar FiltrosNotificacion y FiltrosListaNegra
     - _Requirements: 5.9, 5.10, 7.4, 8.1, 8.3_
 
-  - [ ] 4.2 Definir interfaces de casos de uso
+  - [x] 4.2 Definir interfaces de casos de uso
     - Definir ProcesarEventoTrackingUseCase
     - Definir ConsultarNotificacionesUseCase
     - Definir GestionarListaNegraUseCase
