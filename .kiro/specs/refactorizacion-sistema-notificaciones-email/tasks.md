@@ -157,7 +157,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Validar API Key
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 13.1, 13.5_
 
-  - [ ] 6.4 Implementar HealthController
+  - [x] 6.4 Implementar HealthController
     - Crear endpoint GET /health
     - Verificar conectividad a BD (isValid)
     - Retornar HTTP 200 si todo operativo, 503 si hay problemas
