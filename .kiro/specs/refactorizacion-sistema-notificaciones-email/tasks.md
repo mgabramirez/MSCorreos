@@ -79,7 +79,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Implementar obtenerDetalle() que incluye JSON completo
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-  - [ ] 4.5 Implementar caso de uso: GestionarListaNegraUseCase
+  - [x] 4.5 Implementar caso de uso: GestionarListaNegraUseCase
     - Implementar agregar() con registro en historial
     - Implementar remover() con registro en historial
     - Implementar estaEnListaNegra() con cache
