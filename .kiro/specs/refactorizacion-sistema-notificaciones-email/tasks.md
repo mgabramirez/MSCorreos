@@ -140,7 +140,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Retornar HTTP 200 OK para confirmación SNS
     - _Requirements: 5.1, 5.2, 13.2_
 
-  - [ ] 6.2 Implementar NotificacionesController
+  - [x] 6.2 Implementar NotificacionesController
     - Crear endpoint GET /api/v1/notificaciones con filtros y paginación
     - Crear endpoint GET /api/v1/notificaciones/{id} para detalle completo
     - Crear endpoint GET /api/v1/notificaciones/estadisticas para métricas agregadas

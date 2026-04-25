@@ -1,5 +1,6 @@
 package com.acosux.MSCorreos.application.usecases;
 
+import com.acosux.MSCorreos.dtos.EstadisticasNotificacionDTO;
 import com.acosux.MSCorreos.dtos.FiltrosNotificacion;
 import com.acosux.MSCorreos.dtos.NotificacionDTO;
 import com.acosux.MSCorreos.dtos.NotificacionDetalleDTO;
@@ -18,7 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.criteria.Predicate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -124,6 +127,67 @@ public class ConsultarNotificacionesUseCaseImpl implements ConsultarNotificacion
         return detalle;
     }
     
+    /**
+     * Obtiene métricas agregadas de notificaciones agrupadas por tipo de evento,
+     * empresa y tipo_notificacion.
+     *
+     * <p>Requirement: 7.6</p>
+     *
+     * @return DTO con métricas agregadas
+     */
+    @Override
+    public EstadisticasNotificacionDTO obtenerEstadisticas() {
+        log.debug("Calculando estadísticas de notificaciones");
+
+        try {
+            EstadisticasNotificacionDTO estadisticas = new EstadisticasNotificacionDTO();
+
+            // Total de notificaciones
+            estadisticas.setTotalNotificaciones(notificacionesRepository.count());
+
+            // Agrupado por tipo de evento
+            List<Object[]> porTipoRaw = notificacionesRepository.countGroupByTipo();
+            Map<String, Long> porTipo = new LinkedHashMap<>();
+            for (Object[] row : porTipoRaw) {
+                porTipo.put((String) row[0], (Long) row[1]);
+            }
+            estadisticas.setPorTipoEvento(porTipo);
+
+            // Agrupado por empresa
+            List<Object[]> porEmpresaRaw = notificacionesRepository.countGroupByEmpresa();
+            Map<String, Long> porEmpresa = new LinkedHashMap<>();
+            for (Object[] row : porEmpresaRaw) {
+                porEmpresa.put((String) row[0], (Long) row[1]);
+            }
+            estadisticas.setPorEmpresa(porEmpresa);
+
+            // Agrupado por tipo_notificacion
+            List<Object[]> porTipoNotifRaw = notificacionesRepository.countGroupByTipoNotificacion();
+            Map<String, Long> porTipoNotif = new LinkedHashMap<>();
+            for (Object[] row : porTipoNotifRaw) {
+                porTipoNotif.put((String) row[0], (Long) row[1]);
+            }
+            estadisticas.setPorTipoNotificacion(porTipoNotif);
+
+            // Detalle por empresa + tipo_notificacion
+            List<Object[]> detalleRaw = notificacionesRepository.countGroupByEmpresaAndTipoNotificacion();
+            List<EstadisticasNotificacionDTO.ConteoEmpresaTipoDTO> detalle = detalleRaw.stream()
+                    .map(row -> new EstadisticasNotificacionDTO.ConteoEmpresaTipoDTO(
+                            (String) row[0],
+                            (String) row[1],
+                            (Long) row[2]))
+                    .collect(Collectors.toList());
+            estadisticas.setDetalleEmpresaTipo(detalle);
+
+            log.debug("Estadísticas calculadas: total={}", estadisticas.getTotalNotificaciones());
+            return estadisticas;
+
+        } catch (Exception e) {
+            log.error("Error calculando estadísticas de notificaciones", e);
+            throw new RuntimeException("Error calculando estadísticas: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Construye una especificación dinámica basada en los filtros proporcionados.
      * 

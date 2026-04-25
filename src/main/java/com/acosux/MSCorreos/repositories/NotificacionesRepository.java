@@ -125,4 +125,43 @@ public interface NotificacionesRepository extends JpaRepository<CorreosNotificac
         Date fechaFin, 
         Pageable pageable
     );
+
+    /**
+     * Count notifications grouped by event type (n_tipo).
+     * Used for statistics endpoint.
+     *
+     * @return List of Object[] where [0]=n_tipo (String), [1]=count (Long)
+     */
+    @Query("SELECT n.nTipo, COUNT(n) FROM CorreosNotificaciones n GROUP BY n.nTipo ORDER BY COUNT(n) DESC")
+    List<Object[]> countGroupByTipo();
+
+    /**
+     * Count notifications grouped by empresa.
+     * Used for statistics endpoint.
+     *
+     * @return List of Object[] where [0]=n_empresa (String), [1]=count (Long)
+     */
+    @Query("SELECT n.nEmpresa, COUNT(n) FROM CorreosNotificaciones n GROUP BY n.nEmpresa ORDER BY COUNT(n) DESC")
+    List<Object[]> countGroupByEmpresa();
+
+    /**
+     * Count notifications grouped by tipo_notificacion.
+     * Used for statistics endpoint.
+     *
+     * @return List of Object[] where [0]=n_tipo_notificacion (String), [1]=count (Long)
+     */
+    @Query("SELECT n.nTipoNotificacion, COUNT(n) FROM CorreosNotificaciones n GROUP BY n.nTipoNotificacion ORDER BY COUNT(n) DESC")
+    List<Object[]> countGroupByTipoNotificacion();
+
+    /**
+     * Count notifications grouped by empresa and tipo_notificacion.
+     * Used for statistics endpoint detail breakdown.
+     *
+     * @return List of Object[] where [0]=n_empresa, [1]=n_tipo_notificacion, [2]=count (Long)
+     */
+    @Query("SELECT n.nEmpresa, n.nTipoNotificacion, COUNT(n) " +
+           "FROM CorreosNotificaciones n " +
+           "GROUP BY n.nEmpresa, n.nTipoNotificacion " +
+           "ORDER BY n.nEmpresa, COUNT(n) DESC")
+    List<Object[]> countGroupByEmpresaAndTipoNotificacion();
 }
