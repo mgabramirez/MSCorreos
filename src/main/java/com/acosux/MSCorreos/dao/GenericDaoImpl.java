@@ -5,338 +5,300 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
 
-import javax.persistence.EmbeddedId;
-import javax.persistence.Id;
+import jakarta.persistence.EmbeddedId;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Id;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Root;
 
-import org.hibernate.Hibernate;
-import org.hibernate.Query;
 import org.hibernate.Session;
-import org.hibernate.SessionFactory;
-import org.hibernate.criterion.Order;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Implementación genérica de DAO usando JPA EntityManager (Hibernate 6 compatible).
+ *
+ * <p>Esta clase reemplaza la implementación anterior basada en Hibernate 4 Session API
+ * (Criteria, Query, createSQLQuery) que fue eliminada en Hibernate 6.</p>
+ *
+ * <p>Nota: Esta clase es código legado. El nuevo código usa Spring Data JPA Repositories
+ * directamente. Se mantiene para compatibilidad con código existente.</p>
+ */
 public class GenericDaoImpl<T, K extends Serializable> implements GenericDao<T, K> {
 
-    @Autowired
-    public SessionFactory sessionFactory;
+    @PersistenceContext
+    protected EntityManager entityManager;
 
     @Override
+    @Transactional
     public void saveOrUpdate(T t) {
-        T t1 = obtenerPorId(t);
-        if (t1 == null) {
-            insertar(t);
+        K id = obtenerIdValue(t);
+        if (id == null || entityManager.find(t.getClass(), id) == null) {
+            entityManager.persist(t);
         } else {
-            evict(t1);
-            session().update(t);
+            entityManager.merge(t);
         }
-
     }
 
     @Override
+    @Transactional
     public void saveOrUpdate(List<T> list) {
         for (T t : list) {
-            T t1 = obtenerPorId(t);
-            if (t1 == null) {
-                insertar(t);
-            } else {
-                evict(t1);
-                session().update(t);
-            }
+            saveOrUpdate(t);
         }
     }
 
     @Override
+    @Transactional
     public void insertar(T t) {
-        evict(t);
-        session().save(t);
+        entityManager.persist(t);
     }
 
     @Override
+    @Transactional
     public void insertar(List<T> listInsertar) {
         for (T t : listInsertar) {
-            evict(t);
-            session().save(t);
+            entityManager.persist(t);
         }
     }
 
     @Override
+    @Transactional
     public void actualizar(T t) {
-        T t1 = obtenerPorId(t);
-        if (t1 != null) {
-            evict(t1);
-        }
-        session().update(t);
+        entityManager.merge(t);
     }
 
     @Override
+    @Transactional
     public void actualizar(List<T> listModificar) {
         for (T t : listModificar) {
-            T t1 = obtenerPorId(t);
-            if (t1 != null) {
-                evict(t1);
-            }
-            session().update(t);
+            entityManager.merge(t);
         }
     }
 
     @Override
+    @Transactional
     public void eliminar(T t) {
-        T t1 = obtenerPorIdEliminar(t);
-        if (t1 != null) {
-            evict(t1);
-        }
-        session().delete(t);
+        T managed = entityManager.contains(t) ? t : entityManager.merge(t);
+        entityManager.remove(managed);
     }
 
-    @SuppressWarnings("unchecked")
-    private T obtenerPorId(T t) {
-        try {
-            K id = null;
-            Class<?> c = t.getClass();
-            for (Field field : c.getDeclaredFields()) {
-                if (field.isAnnotationPresent(Id.class) || field.isAnnotationPresent(EmbeddedId.class)) {
-                    field.setAccessible(true);
-                    id = (K) field.get(t);
-                    break;
-                }
-            }
-
-            if (id == null) {
-                for (Method method : c.getDeclaredMethods()) {
-                    if (method.isAnnotationPresent(Id.class) || method.isAnnotationPresent(EmbeddedId.class)) {
-                        id = (K) method.invoke(t, new Object[]{});
-                        break;
-                    }
-                }
-            }
-
-            return (T) session().get(c, id);
-        } catch (Exception e) {
-            e.printStackTrace();
+    @Override
+    @Transactional
+    public void eliminarPorId(Class<T> type, K id) {
+        T t = entityManager.find(type, id);
+        if (t != null) {
+            entityManager.remove(t);
         }
-        return null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private T obtenerPorIdEliminar(T t) {
-        try {
-            K id = null;
-            Class<?> c = t.getClass();
-            for (Field field : c.getDeclaredFields()) {
-                if (field.isAnnotationPresent(Id.class) || field.isAnnotationPresent(EmbeddedId.class)) {
-                    field.setAccessible(true);
-                    id = (K) field.get(t);
-                    break;
-                }
-            }
-
-            if (id == null) {
-                for (Method method : c.getDeclaredMethods()) {
-                    if (method.isAnnotationPresent(Id.class) || method.isAnnotationPresent(EmbeddedId.class)) {
-                        id = (K) method.invoke(t, new Object[]{});
-                        break;
-                    }
-                }
-            }
-
-            return (T) session().load(c, id);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
     }
 
     @Override
     public void evict(T t) {
-        session().evict(t);
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public void eliminarPorId(Class<T> type, K id) {
-        T t = (T) session().load(type.getName(), id);
-        session().delete(t);
+        entityManager.detach(t);
     }
 
     @Override
     public Object contar(Class<T> type) {
-        return session().createCriteria(type.getName()).setProjection(Projections.count("id")).uniqueResult();
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+        cq.select(cb.count(cq.from(type)));
+        return entityManager.createQuery(cq).getSingleResult();
     }
 
     @Override
     public Object contar(String consulta, Object[] valores) {
-        Query query = (Query) session().createQuery(consulta);
-        if (valores != null) {
-            for (Integer i = 0; i < valores.length; i++) {
-                Integer iparameter = i + 1;
-                query.setParameter(iparameter.toString(), valores[i]);
-            }
-        }
-        return query.uniqueResult();
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public List<T> obtenerTodos(Class<T> type) {
-        return session().createCriteria(type.getName()).list();
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public List<T> obtenerTodosOrder(Class<T> type, String atributoOrden) {
-        return session().createCriteria(type.getName()).addOrder(Order.asc(atributoOrden)).list();
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public List<T> obtener(Class<T> type, String atributoOrden, Boolean activo) {
-        if (activo != null) {
-            return session().createCriteria(type.getName()).add(Restrictions.eq("activo", activo))
-                    .addOrder(Order.asc(atributoOrden)).list();
-        } else {
-            return session().createCriteria(type.getName()).addOrder(Order.asc(atributoOrden)).list();
-        }
-
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public List<T> obtenerListaPorAtributo(Class<T> type, String Atributo, String valorAtributo, Boolean activo) {
-        if (activo != null) {
-            return session().createCriteria(type.getName()).add(Restrictions.eq(Atributo, valorAtributo))
-                    .add(Restrictions.eq("activo", activo)).list();
-        } else {
-            return session().createCriteria(type.getName()).add(Restrictions.eq(Atributo, valorAtributo)).list();
-        }
-
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public T obtenerPorAtributo(Class<T> type, String Atributo, String valorAtributo, Boolean activo) {
-        if (activo != null) {
-            return (T) session().createCriteria(type.getName()).add(Restrictions.eq(Atributo, valorAtributo))
-                    .add(Restrictions.eq("activo", activo)).uniqueResult();
-        } else {
-            return (T) session().createCriteria(type.getName()).add(Restrictions.eq(Atributo, valorAtributo))
-                    .uniqueResult();
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public List<T> obtenerPorHql(String consulta, Object[] valores) {
-        Query query = (Query) session().createQuery(consulta);
-        if (valores != null) {
-            for (int i = 0; i < valores.length; i++) {
-                if (valores[i] != null) {
-                    query.setParameter(String.valueOf(i + 1), valores[i]);
-                }
-            }
-        }
-        return query.list();
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public List<T> obtenerLista(String consulta, Object[] valoresConsulta, boolean mensaje,
-            Object[] valoresInicializar) {
-        boolean validacion = false;
-        List<T> list = null;
-        Query query = (Query) session().createQuery(consulta);
-        if (valoresConsulta != null) {
-            for (int i = 0; i < valoresConsulta.length; i++) {
-                if (valoresConsulta[i] != null) {
-
-                    query.setParameter(String.valueOf(i + 1), valoresConsulta[i]);
-                }
-            }
-        }
-        if (validacion) {
-            //
-        } else {
-            list = query.list();
-            if (list.isEmpty() && mensaje) {
-                //
-            } else {
-                for (T t : list) {
-                    for (int i = 0; i < valoresInicializar.length; i++) {
-                        try {
-                            Hibernate.initialize(t.getClass().getMethod(valoresInicializar[i].toString()).invoke(t));
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            }
-        }
-        return list;
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public T obtenerObjetoPorHql(String consulta, Object[] valores) {
-        Query query = (Query) session().createQuery(consulta);
-        if (valores != null) {
-            for (int i = 0; i < valores.length; i++) {
-                if (valores[i] != null) {
-                    query.setParameter(String.valueOf(i + 1), valores[i]);
-                }
-            }
-        }
-        List<T> lista = query.list();
-
-        return lista == null || lista.isEmpty() ? null : lista.get(0);
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public List<T> obtenerPorHql(String consulta, Object[] valores, int min, int max) {
-        Query query = (Query) session().createQuery(consulta).setFirstResult(min).setMaxResults(max);
+        Query query = entityManager.createQuery(consulta);
         if (valores != null) {
             for (int i = 0; i < valores.length; i++) {
                 query.setParameter(String.valueOf(i + 1), valores[i]);
             }
         }
-
-        return query.list();
+        return query.getSingleResult();
     }
 
-    @SuppressWarnings("unchecked")
     @Override
-    public T obtenerObjetoPorSql(String consulta, Class<T> type) {
-        Query query = (Query) session().createSQLQuery(consulta).addEntity(type.getName());
-        List<T> lista = query.list();
+    @SuppressWarnings("unchecked")
+    public List<T> obtenerTodos(Class<T> type) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<T> cq = cb.createQuery(type);
+        cq.from(type);
+        return entityManager.createQuery(cq).getResultList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<T> obtenerTodosOrder(Class<T> type, String atributoOrden) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<T> cq = cb.createQuery(type);
+        Root<T> root = cq.from(type);
+        cq.orderBy(cb.asc(root.get(atributoOrden)));
+        return entityManager.createQuery(cq).getResultList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<T> obtener(Class<T> type, String atributoOrden, Boolean activo) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<T> cq = cb.createQuery(type);
+        Root<T> root = cq.from(type);
+        if (activo != null) {
+            cq.where(cb.equal(root.get("activo"), activo));
+        }
+        cq.orderBy(cb.asc(root.get(atributoOrden)));
+        return entityManager.createQuery(cq).getResultList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<T> obtenerListaPorAtributo(Class<T> type, String atributo, String valorAtributo, Boolean activo) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<T> cq = cb.createQuery(type);
+        Root<T> root = cq.from(type);
+        if (activo != null) {
+            cq.where(cb.equal(root.get(atributo), valorAtributo),
+                     cb.equal(root.get("activo"), activo));
+        } else {
+            cq.where(cb.equal(root.get(atributo), valorAtributo));
+        }
+        return entityManager.createQuery(cq).getResultList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public T obtenerPorAtributo(Class<T> type, String atributo, String valorAtributo, Boolean activo) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<T> cq = cb.createQuery(type);
+        Root<T> root = cq.from(type);
+        if (activo != null) {
+            cq.where(cb.equal(root.get(atributo), valorAtributo),
+                     cb.equal(root.get("activo"), activo));
+        } else {
+            cq.where(cb.equal(root.get(atributo), valorAtributo));
+        }
+        List<T> results = entityManager.createQuery(cq).setMaxResults(1).getResultList();
+        return results.isEmpty() ? null : results.get(0);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<T> obtenerPorHql(String consulta, Object[] valores) {
+        Query query = entityManager.createQuery(consulta);
+        if (valores != null) {
+            for (int i = 0; i < valores.length; i++) {
+                if (valores[i] != null) {
+                    query.setParameter(String.valueOf(i + 1), valores[i]);
+                }
+            }
+        }
+        return query.getResultList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public T obtenerObjetoPorHql(String consulta, Object[] valores) {
+        Query query = entityManager.createQuery(consulta);
+        if (valores != null) {
+            for (int i = 0; i < valores.length; i++) {
+                if (valores[i] != null) {
+                    query.setParameter(String.valueOf(i + 1), valores[i]);
+                }
+            }
+        }
+        List<T> lista = query.getResultList();
         return lista == null || lista.isEmpty() ? null : lista.get(0);
     }
 
-    @SuppressWarnings("unchecked")
     @Override
+    @SuppressWarnings("unchecked")
+    public List<T> obtenerPorHql(String consulta, Object[] valores, int min, int max) {
+        Query query = entityManager.createQuery(consulta)
+                .setFirstResult(min)
+                .setMaxResults(max);
+        if (valores != null) {
+            for (int i = 0; i < valores.length; i++) {
+                query.setParameter(String.valueOf(i + 1), valores[i]);
+            }
+        }
+        return query.getResultList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<T> obtenerLista(String consulta, Object[] valoresConsulta, boolean mensaje,
+            Object[] valoresInicializar) {
+        Query query = entityManager.createQuery(consulta);
+        if (valoresConsulta != null) {
+            for (int i = 0; i < valoresConsulta.length; i++) {
+                if (valoresConsulta[i] != null) {
+                    query.setParameter(String.valueOf(i + 1), valoresConsulta[i]);
+                }
+            }
+        }
+        return query.getResultList();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public T obtenerObjetoPorSql(String consulta, Class<T> type) {
+        List<T> lista = entityManager.createNativeQuery(consulta, type).getResultList();
+        return lista == null || lista.isEmpty() ? null : lista.get(0);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
     public List<T> obtenerPorSql(String consulta, Class<T> type) {
-        Query query = (Query) session().createSQLQuery(consulta).addEntity(type.getName());
-        return query.list();
+        return entityManager.createNativeQuery(consulta, type).getResultList();
     }
 
-    @SuppressWarnings("unchecked")
     @Override
+    @Transactional
     public T obtenerPorId(Class<T> type, K id) {
-        return (T) session().get(type.getName(), id);
+        return entityManager.find(type, id);
     }
 
-    @SuppressWarnings("unchecked")
     @Override
+    @Transactional
     public T obtenerPorIdEvict(Class<T> type, K id) {
-        T entidad = (T) session().get(type.getName(), id);
+        T entidad = entityManager.find(type, id);
         if (entidad != null) {
-            evict(entidad);
+            entityManager.detach(entidad);
         }
         return entidad;
     }
 
+    /**
+     * Retorna la sesión Hibernate subyacente.
+     * Disponible para compatibilidad con código legado.
+     */
+    @Override
     public Session session() {
-        return sessionFactory.getCurrentSession();
+        return entityManager.unwrap(Session.class);
     }
 
+    // =========================================================================
+    // Helpers privados
+    // =========================================================================
+
+    @SuppressWarnings("unchecked")
+    private K obtenerIdValue(T t) {
+        try {
+            Class<?> c = t.getClass();
+            for (Field field : c.getDeclaredFields()) {
+                if (field.isAnnotationPresent(Id.class) || field.isAnnotationPresent(EmbeddedId.class)) {
+                    field.setAccessible(true);
+                    return (K) field.get(t);
+                }
+            }
+            for (Method method : c.getDeclaredMethods()) {
+                if (method.isAnnotationPresent(Id.class) || method.isAnnotationPresent(EmbeddedId.class)) {
+                    return (K) method.invoke(t);
+                }
+            }
+        } catch (Exception e) {
+            // ignorar
+        }
+        return null;
+    }
 }

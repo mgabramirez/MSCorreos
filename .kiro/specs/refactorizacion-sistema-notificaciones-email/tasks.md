@@ -163,7 +163,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Retornar HTTP 200 si todo operativo, 503 si hay problemas
     - _Requirements: 12.3, NF2.2_
 
-  - [ ] 6.5 Implementar API Key authentication
+  - [x] 6.5 Implementar API Key authentication
     - Crear filtro para validar X-API-Key header
     - Configurar Spring Security para endpoints /api/v1/notificaciones/* y /api/v1/lista-negra/*
     - Permitir acceso sin autenticación a /health y /api/v1/sns/*

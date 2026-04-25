@@ -1,12 +1,12 @@
 package com.acosux.MSCorreos.security;
 
 import java.io.IOException;
-import javax.servlet.*;
-import javax.servlet.http.*;
+import jakarta.servlet.*;
+import jakarta.servlet.http.*;
 import org.springframework.stereotype.*;
 
 @Component
-public class CorsFilter implements javax.servlet.Filter {
+public class CorsFilter implements jakarta.servlet.Filter {
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {

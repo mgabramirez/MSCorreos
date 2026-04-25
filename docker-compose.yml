@@ -1,0 +1,70 @@
+version: '3.9'
+
+services:
+
+  # ============================================================
+  # PostgreSQL
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: mscorreos-postgres
+    environment:
+      POSTGRES_DB: db_correos
+      POSTGRES_USER: administradores
+      POSTGRES_PASSWORD: "@dm1n$t0d0c0mPU$"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Scripts de inicialización (se ejecutan en orden alfabético)
+      - ./infrastructure/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U administradores -d db_correos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mscorreos-net
+
+  # ============================================================
+  # MSCorreos Application
+  # ============================================================
+  mscorreos:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mscorreos-app
+    ports:
+      - "8080:8080"
+    environment:
+      # Base de datos
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/db_correos
+      SPRING_DATASOURCE_USERNAME: administradores
+      SPRING_DATASOURCE_PASSWORD: "@dm1n$t0d0c0mPU$"
+      # JPA
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_JPA_SHOW_SQL: "false"
+      # API Key (cambiar en producción)
+      MSCORREOS_API_KEY: mscorreos-api-key-change-in-production
+      # Logging
+      LOGGING_LEVEL_COM_ACOSUX_MSCORREOS: INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    networks:
+      - mscorreos-net
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  mscorreos-net:
+    driver: bridge
