@@ -96,7 +96,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Implementar incrementarSoftBounce() con lógica de 3+ bounces en 30 días
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
 
-  - [ ] 5.2 Implementar SNSMessageValidator
+  - [x] 5.2 Implementar SNSMessageValidator
     - Validar firma de mensajes SNS usando certificado X.509
     - Validar que URL de certificado es de AWS
     - Construir string to sign según tipo de mensaje
