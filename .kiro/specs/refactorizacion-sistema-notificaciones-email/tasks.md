@@ -148,7 +148,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - Retornar HTTP 401 si API Key inválida
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 13.1, 13.5_
 
-  - [ ] 6.3 Implementar ListaNegraController
+  - [x] 6.3 Implementar ListaNegraController
     - Crear endpoint GET /api/v1/lista-negra con filtros y paginación
     - Crear endpoint POST /api/v1/lista-negra para agregar emails manualmente
     - Crear endpoint DELETE /api/v1/lista-negra/{email} para remover
