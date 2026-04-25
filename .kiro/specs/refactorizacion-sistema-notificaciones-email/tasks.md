@@ -88,7 +88,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
 
 - [ ] 5. Implementar capa de infraestructura (Infrastructure Layer)
-  - [ ] 5.1 Implementar BlacklistService
+  - [x] 5.1 Implementar BlacklistService
     - Implementar estaEnListaNegra() que consulta cor_lista_negra
     - Implementar cache con Caffeine (TTL 5 minutos)
     - Implementar agregarAListaNegra() con registro en historial

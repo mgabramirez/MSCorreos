@@ -3,16 +3,12 @@ package com.acosux.MSCorreos.application.usecases;
 import com.acosux.MSCorreos.dtos.BouncedRecipient;
 import com.acosux.MSCorreos.dtos.ComplainedRecipient;
 import com.acosux.MSCorreos.dtos.TrackingEventDTO;
-import com.acosux.MSCorreos.entidades.AccionListaNegra;
 import com.acosux.MSCorreos.entidades.CorreosNotificaciones;
-import com.acosux.MSCorreos.entidades.ListaNegra;
-import com.acosux.MSCorreos.entidades.ListaNegraHistorial;
 import com.acosux.MSCorreos.entidades.TipoBloqueo;
 import com.acosux.MSCorreos.enums.TipoEvento;
 import com.acosux.MSCorreos.infrastructure.exceptions.TrackingException;
-import com.acosux.MSCorreos.repositories.ListaNegraHistorialRepository;
-import com.acosux.MSCorreos.repositories.ListaNegraRepository;
 import com.acosux.MSCorreos.repositories.NotificacionesRepository;
+import com.acosux.MSCorreos.service.BlacklistService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -21,11 +17,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Implementación del caso de uso para procesar eventos de tracking recibidos desde Amazon SNS.
@@ -48,18 +42,15 @@ public class ProcesarEventoTrackingUseCaseImpl implements ProcesarEventoTracking
     private static final Logger log = LoggerFactory.getLogger(ProcesarEventoTrackingUseCaseImpl.class);
     
     private final NotificacionesRepository notificacionesRepository;
-    private final ListaNegraRepository listaNegraRepository;
-    private final ListaNegraHistorialRepository listaNegraHistorialRepository;
+    private final BlacklistService blacklistService;
     private final ObjectMapper objectMapper;
     
     @Autowired
     public ProcesarEventoTrackingUseCaseImpl(
             NotificacionesRepository notificacionesRepository,
-            ListaNegraRepository listaNegraRepository,
-            ListaNegraHistorialRepository listaNegraHistorialRepository) {
+            BlacklistService blacklistService) {
         this.notificacionesRepository = notificacionesRepository;
-        this.listaNegraRepository = listaNegraRepository;
-        this.listaNegraHistorialRepository = listaNegraHistorialRepository;
+        this.blacklistService = blacklistService;
         this.objectMapper = new ObjectMapper();
     }
     
@@ -311,14 +302,15 @@ public class ProcesarEventoTrackingUseCaseImpl implements ProcesarEventoTracking
             // Gestionar lista negra según tipo de bounce
             if (tipoEvento == TipoEvento.BOUNCE_PERMANENT) {
                 // Requirement 6.2: Agregar a lista negra automáticamente con tipo HARD_BOUNCE
-                agregarAListaNegra(
+                blacklistService.agregarAListaNegra(
                         email,
                         String.format("Hard Bounce automático: %s", bounceType),
-                        TipoBloqueo.HARD_BOUNCE
+                        TipoBloqueo.HARD_BOUNCE,
+                        null
                 );
             } else if (tipoEvento == TipoEvento.BOUNCE_TRANSIENT) {
                 // Requirement 6.4, 6.5: Incrementar contador y bloquear si >= 3 en 30 días
-                gestionarSoftBounce(email, bounceType);
+                blacklistService.incrementarSoftBounce(email, bounceType);
             }
         }
     }
@@ -365,10 +357,11 @@ public class ProcesarEventoTrackingUseCaseImpl implements ProcesarEventoTracking
             );
             
             // Requirement 6.3: Agregar a lista negra automáticamente con tipo COMPLAINT
-            agregarAListaNegra(
+            blacklistService.agregarAListaNegra(
                     email,
                     String.format("Complaint automático: %s", complaintFeedbackType != null ? complaintFeedbackType : "spam"),
-                    TipoBloqueo.COMPLAINT
+                    TipoBloqueo.COMPLAINT,
+                    null
             );
         }
     }
@@ -417,130 +410,6 @@ public class ProcesarEventoTrackingUseCaseImpl implements ProcesarEventoTracking
         } catch (Exception e) {
             log.error("Error registrando notificación", e);
             throw new RuntimeException("Error registrando notificación", e);
-        }
-    }
-    
-    /**
-     * Agrega un email a la lista negra con el tipo de bloqueo especificado.
-     * Registra la acción en el historial.
-     * 
-     * Requirements: 6.2, 6.3
-     * 
-     * @param email Email a bloquear
-     * @param motivo Motivo del bloqueo
-     * @param tipoBloqueo Tipo de bloqueo (HARD_BOUNCE, COMPLAINT)
-     */
-    private void agregarAListaNegra(String email, String motivo, TipoBloqueo tipoBloqueo) {
-        try {
-            Optional<ListaNegra> existente = listaNegraRepository.findByEmail(email);
-            
-            ListaNegra listaNegra;
-            if (existente.isPresent()) {
-                listaNegra = existente.get();
-                listaNegra.setActivo(true);
-                listaNegra.setTipoBloqueo(tipoBloqueo);
-                listaNegra.setMotivo(motivo);
-                listaNegra.setFechaRegistro(new Date());
-                log.info("Actualizando email existente en lista negra: email={}, tipo={}", email, tipoBloqueo);
-            } else {
-                listaNegra = new ListaNegra();
-                listaNegra.setEmail(email);
-                listaNegra.setMotivo(motivo);
-                listaNegra.setTipoBloqueo(tipoBloqueo);
-                listaNegra.setActivo(true);
-                listaNegra.setFechaRegistro(new Date());
-                listaNegra.setContadorSoftBounce(0);
-                log.info("Agregando nuevo email a lista negra: email={}, tipo={}", email, tipoBloqueo);
-            }
-            
-            listaNegraRepository.save(listaNegra);
-            
-            // Registrar en historial
-            ListaNegraHistorial historial = new ListaNegraHistorial();
-            historial.setEmail(email);
-            historial.setAccion(AccionListaNegra.AGREGAR);
-            historial.setMotivo(motivo);
-            historial.setUsuario(null); // NULL indica acción automática
-            historial.setFecha(new Date());
-            
-            listaNegraHistorialRepository.save(historial);
-            
-            log.info("Email agregado a lista negra exitosamente: email={}, tipo={}", email, tipoBloqueo);
-            
-        } catch (Exception e) {
-            log.error("Error agregando email a lista negra: email={}", email, e);
-            // No lanzar excepción para no interrumpir el procesamiento del evento
-        }
-    }
-    
-    /**
-     * Gestiona soft bounces: incrementa contador y bloquea si >= 3 en 30 días.
-     * 
-     * Requirements: 6.4, 6.5
-     * 
-     * @param email Email que generó soft bounce
-     * @param bounceType Tipo de bounce
-     */
-    private void gestionarSoftBounce(String email, String bounceType) {
-        try {
-            Optional<ListaNegra> existente = listaNegraRepository.findByEmail(email);
-            
-            ListaNegra listaNegra;
-            if (existente.isPresent()) {
-                listaNegra = existente.get();
-                
-                // Verificar si el último soft bounce fue hace más de 30 días
-                if (listaNegra.getUltimoSoftBounce() != null) {
-                    Calendar cal = Calendar.getInstance();
-                    cal.add(Calendar.DAY_OF_MONTH, -30);
-                    Date hace30Dias = cal.getTime();
-                    
-                    if (listaNegra.getUltimoSoftBounce().before(hace30Dias)) {
-                        // Resetear contador si han pasado más de 30 días
-                        log.info("Reseteando contador de soft bounces (más de 30 días): email={}", email);
-                        listaNegra.setContadorSoftBounce(0);
-                    }
-                }
-                
-                // Incrementar contador
-                listaNegra.incrementarSoftBounce();
-                log.info("Incrementando contador de soft bounces: email={}, contador={}", 
-                        email, listaNegra.getContadorSoftBounce());
-                
-            } else {
-                // Crear nuevo registro
-                listaNegra = new ListaNegra();
-                listaNegra.setEmail(email);
-                listaNegra.setMotivo(String.format("Soft Bounce: %s", bounceType));
-                listaNegra.setTipoBloqueo(TipoBloqueo.HARD_BOUNCE); // Temporal, se cambiará si alcanza 3
-                listaNegra.setActivo(false); // No bloquear aún
-                listaNegra.setFechaRegistro(new Date());
-                listaNegra.setContadorSoftBounce(1);
-                listaNegra.setUltimoSoftBounce(new Date());
-                log.info("Creando nuevo registro de soft bounce: email={}", email);
-            }
-            
-            listaNegraRepository.save(listaNegra);
-            
-            // Si alcanzó 3 o más soft bounces, registrar en historial
-            if (listaNegra.getContadorSoftBounce() >= 3 && listaNegra.getActivo()) {
-                ListaNegraHistorial historial = new ListaNegraHistorial();
-                historial.setEmail(email);
-                historial.setAccion(AccionListaNegra.AGREGAR);
-                historial.setMotivo(String.format("Bloqueado automáticamente por %d soft bounces en 30 días", 
-                        listaNegra.getContadorSoftBounce()));
-                historial.setUsuario(null); // NULL indica acción automática
-                historial.setFecha(new Date());
-                
-                listaNegraHistorialRepository.save(historial);
-                
-                log.warn("Email bloqueado por soft bounces repetidos: email={}, contador={}", 
-                        email, listaNegra.getContadorSoftBounce());
-            }
-            
-        } catch (Exception e) {
-            log.error("Error gestionando soft bounce: email={}", email, e);
-            // No lanzar excepción para no interrumpir el procesamiento del evento
         }
     }
 }
