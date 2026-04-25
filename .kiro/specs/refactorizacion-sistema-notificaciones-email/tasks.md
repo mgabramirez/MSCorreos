@@ -132,7 +132,7 @@ Este plan implementa la consolidación de 12+ tablas dispersas de notificaciones
     - _Requirements: 13.1_
 
 - [ ] 6. Implementar capa de presentación (Presentation Layer)
-  - [ ] 6.1 Implementar SNSListenerController
+  - [x] 6.1 Implementar SNSListenerController
     - Crear endpoint POST /api/v1/sns/tracking
     - Validar firma SNS para seguridad
     - Manejar SubscriptionConfirmation automáticamente
