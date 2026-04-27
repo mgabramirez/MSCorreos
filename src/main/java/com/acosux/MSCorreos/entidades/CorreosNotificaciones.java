@@ -85,6 +85,12 @@ public class CorreosNotificaciones implements Serializable {
     @Column(name = "n_tipo_notificacion")
     private String nTipoNotificacion;
 
+    @Column(name = "n_asunto")
+    private String nAsunto;
+
+    @Column(name = "n_modulo", length = 100)
+    private String nModulo;
+
     public CorreosNotificaciones() {
     }
 
@@ -168,6 +174,20 @@ public class CorreosNotificaciones implements Serializable {
         this.nTipoNotificacion = nTipoNotificacion;
     }
 
-    
-    
+    public String getnAsunto() {
+        return nAsunto;
+    }
+
+    public void setnAsunto(String nAsunto) {
+        this.nAsunto = nAsunto;
+    }
+
+    public String getnModulo() {
+        return nModulo;
+    }
+
+    public void setnModulo(String nModulo) {
+        this.nModulo = nModulo;
+    }
+
 }
